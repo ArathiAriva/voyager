@@ -1,0 +1,16 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm install *)",
+      "Bash(npm run *)",
+      "Bash(mkdir -p /Users/aarathi/claude-projects/voyager/backend)",
+      "Bash(python3 -m venv .venv)",
+      "Bash(.venv/bin/pip install *)",
+      "Bash(.venv/bin/python -m uvicorn app.main:app --host 0.0.0.0 --port 8000)",
+      "Bash(curl -s http://localhost:8000/health)",
+      "Bash(curl -s -X POST http://localhost:8000/api/chat -H 'Content-Type: application/json' -d '{\"messages\": [{\"role\": \"user\", \"content\": \"Plan a trip to Japan\"}]}')",
+      "Bash(curl -s http://localhost:8000/api/trips)",
+      "Bash(kill %1)"
+    ]
+  }
+}
