@@ -1,23 +1,27 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
 from app.models.chat import ChatRequest, ChatResponse, Message
+from app.claude import get_client, get_model
 
 router = APIRouter(prefix="/chat", tags=["chat"])
 
-# Placeholder responses until the LLM is wired in (Month 1)
-STUB_REPLIES = [
-    "That sounds like a wonderful destination! I'd love to help you plan it.",
-    "Great question. I'm still learning your travel preferences — tell me more about what you enjoy.",
-    "I can help with itineraries, local tips, and packing lists. What would you like to start with?",
-    "Based on your past trips, I think you'd love somewhere with culture and good food. Have you considered Portugal?",
-    "I'll remember this for your next trip. Memory systems are coming in Month 2!",
-]
-
-_reply_index = 0
+SYSTEM_PROMPT = (
+    "You are Voyager, an AI travel companion. "
+    "Help users plan trips, discover destinations, build itineraries, and get local tips. "
+    "Be concise, warm, and enthusiastic about travel."
+)
 
 
 @router.post("", response_model=ChatResponse)
 async def chat(request: ChatRequest) -> ChatResponse:
-    global _reply_index
-    reply = STUB_REPLIES[_reply_index % len(STUB_REPLIES)]
-    _reply_index += 1
-    return ChatResponse(message=Message(role="assistant", content=reply))
+    client = get_client()
+    try:
+        response = await client.chat.completions.create(
+            model=get_model(),
+            messages=[{"role": "system", "content": SYSTEM_PROMPT}]
+            + [{"role": m.role, "content": m.content} for m in request.messages],
+        )
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=str(e))
+
+    content = response.choices[0].message.content or ""
+    return ChatResponse(message=Message(role="assistant", content=content))
