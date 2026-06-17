@@ -1,13 +1,39 @@
 from dotenv import load_dotenv
 load_dotenv()
 
+import logging
+import logging.config
+
+logging.config.dictConfig({
+    "version": 1,
+    "disable_existing_loggers": False,
+    "formatters": {
+        "default": {
+            "format": "%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+            "datefmt": "%H:%M:%S",
+        },
+    },
+    "handlers": {
+        "console": {
+            "class": "logging.StreamHandler",
+            "formatter": "default",
+        },
+    },
+    "loggers": {
+        "voyager": {"level": "DEBUG", "handlers": ["console"], "propagate": False},
+        # Silence noisy libraries
+        "sqlalchemy.engine": {"level": "WARNING"},
+        "httpx": {"level": "WARNING"},
+    },
+})
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import select
 
 from app.db import SessionLocal
 from app.models.orm import TripORM
-from app.routers import chat, trips
+from app.routers import chat, trips, conversations
 
 app = FastAPI(title="Voyager API", version="0.1.0")
 
@@ -21,6 +47,7 @@ app.add_middleware(
 
 app.include_router(chat.router, prefix="/api")
 app.include_router(trips.router, prefix="/api")
+app.include_router(conversations.router, prefix="/api")
 
 _SEED_TRIPS = [
     TripORM(id="1", destination="Kyoto, Japan", dates="March 2025", status="past", emoji="🏯", summary="Cherry blossom season, temple walks, and too much matcha."),

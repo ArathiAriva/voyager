@@ -43,6 +43,22 @@ uvicorn app.main:app --reload
 
 The API is available at `http://localhost:8000`. Interactive docs at `/docs`.
 
+## Troubleshooting
+
+**Port 8000 already in use**
+
+A previous uvicorn process is still running. Find and kill it:
+
+```bash
+kill $(lsof -ti :8000)
+```
+
+Then restart normally. Alternatively, run on a different port:
+
+```bash
+uvicorn app.main:app --reload --port 8001
+```
+
 ## Endpoints
 
 | Method | Path | Description |
