@@ -67,7 +67,6 @@ The MCP server is launched automatically as a subprocess when the agent loop fir
 | Method | Path | Description |
 |--------|------|-------------|
 | GET | `/health` | Health check |
-| POST | `/api/chat` | Stateless chat |
 | GET | `/api/trips` | List trips |
 | POST | `/api/trips` | Create trip |
 | GET | `/api/conversations` | List conversations |

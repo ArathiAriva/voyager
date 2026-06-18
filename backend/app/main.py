@@ -33,7 +33,7 @@ from sqlalchemy import select
 
 from app.db import SessionLocal
 from app.models.orm import TripORM
-from app.routers import chat, trips, conversations
+from app.routers import trips, conversations
 
 app = FastAPI(title="Voyager API", version="0.1.0")
 
@@ -45,7 +45,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-app.include_router(chat.router, prefix="/api")
 app.include_router(trips.router, prefix="/api")
 app.include_router(conversations.router, prefix="/api")
 
