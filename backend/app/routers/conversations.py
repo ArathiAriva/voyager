@@ -12,6 +12,7 @@ from app.models.orm import ConversationORM, MessageORM
 from app.models.conversation import Conversation, ConversationSummary, SendMessageRequest, Message
 from app.claude import get_client, get_model
 from app.tools import TOOL_SCHEMAS, execute_tool
+from app.mcp_client import mcp_tool_schemas, call_mcp_tool
 
 logger = logging.getLogger("voyager.conversations")
 
@@ -22,7 +23,9 @@ SYSTEM_PROMPT = (
     "Help users plan trips, discover destinations, build itineraries, and get local tips. "
     "Be concise, warm, and enthusiastic about travel. "
     "You have access to the user's saved trips via the get_trips tool — use it whenever their "
-    "travel history or upcoming plans would help you give a more personalised answer."
+    "travel history or upcoming plans would help you give a more personalised answer. "
+    "You have access to real-time weather forecasts via the get_weather tool — use it whenever "
+    "the user asks about weather, packing, or conditions at a destination."
 )
 
 
@@ -96,6 +99,16 @@ async def send_message(
         conversation_id[:8], len(body.content), len(history), model,
     )
 
+    try:
+        mcp_schemas = await mcp_tool_schemas()
+    except Exception as e:
+        logger.warning("conv=%s | MCP server unavailable, continuing without MCP tools: %s", conversation_id[:8], e)
+        mcp_schemas = []
+
+    # Names served by MCP — used to route tool calls at execution time
+    mcp_tool_names = {s["function"]["name"] for s in mcp_schemas}
+    all_tools = TOOL_SCHEMAS + mcp_schemas
+
     client = get_client()
     iteration = 0
     # Agentic tool-call loop: keep going until the model returns a plain text reply
@@ -107,7 +120,7 @@ async def send_message(
             response = await client.chat.completions.create(
                 model=model,
                 messages=[{"role": "system", "content": SYSTEM_PROMPT}] + history,
-                tools=TOOL_SCHEMAS,
+                tools=all_tools,
                 tool_choice="auto",
             )
             msg = response.choices[0].message
@@ -146,7 +159,10 @@ async def send_message(
             # Execute each tool and append results
             for tc in msg.tool_calls:
                 args = json.loads(tc.function.arguments or "{}")
-                result = await execute_tool(tc.function.name, args, session)
+                if tc.function.name in mcp_tool_names:
+                    result = await call_mcp_tool(tc.function.name, args)
+                else:
+                    result = await execute_tool(tc.function.name, args, session)
                 history.append({
                     "role": "tool",
                     "tool_call_id": tc.id,

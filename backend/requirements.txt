@@ -8,3 +8,4 @@ sqlalchemy==2.0.41
 aiosqlite==0.20.0
 alembic==1.16.1
 greenlet==3.2.3
+mcp[cli]>=1.0.0

@@ -3,6 +3,10 @@ backend/.venv/
 backend/__pycache__/
 backend/**/__pycache__/
 backend/**/*.pyc
+mcp-server/.venv/
+mcp-server/__pycache__/
+mcp-server/**/__pycache__/
+mcp-server/**/*.pyc
 backend/.env
 backend/voyager.db
 
