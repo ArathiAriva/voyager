@@ -33,7 +33,7 @@ from sqlalchemy import select
 
 from app.db import SessionLocal
 from app.models.orm import TripORM
-from app.routers import trips, conversations
+from app.routers import trips, conversations, journal, content, memories
 
 app = FastAPI(title="Voyager API", version="0.1.0")
 
@@ -47,6 +47,9 @@ app.add_middleware(
 
 app.include_router(trips.router, prefix="/api")
 app.include_router(conversations.router, prefix="/api")
+app.include_router(journal.router, prefix="/api")
+app.include_router(content.router, prefix="/api")
+app.include_router(memories.router, prefix="/api")
 
 _SEED_TRIPS = [
     TripORM(id="1", destination="Kyoto, Japan", dates="March 2025", status="past", emoji="🏯", summary="Cherry blossom season, temple walks, and too much matcha."),

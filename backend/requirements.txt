@@ -10,3 +10,4 @@ alembic==1.16.1
 greenlet==3.2.3
 mcp[cli]>=1.0.0
 chromadb==0.6.3
+httpx==0.28.1

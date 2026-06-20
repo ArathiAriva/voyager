@@ -1,4 +1,4 @@
-from sqlalchemy import String, ForeignKey, Text, DateTime
+from sqlalchemy import String, ForeignKey, Text, DateTime, JSON
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from datetime import datetime, timezone
 from app.db import Base
@@ -13,6 +13,43 @@ class TripORM(Base):
     status: Mapped[str] = mapped_column(String, nullable=False)
     emoji: Mapped[str] = mapped_column(String, nullable=False)
     summary: Mapped[str] = mapped_column(String, nullable=False, default="")
+    cover_photo_url: Mapped[str | None] = mapped_column(String, nullable=True)
+    tags: Mapped[list] = mapped_column(JSON, nullable=True, default=list)
+
+    journal_entries: Mapped[list["JournalEntryORM"]] = relationship(
+        "JournalEntryORM", back_populates="trip", order_by="JournalEntryORM.date.desc()", cascade="all, delete-orphan"
+    )
+    connected_content: Mapped[list["ConnectedContentORM"]] = relationship(
+        "ConnectedContentORM", back_populates="trip", order_by="ConnectedContentORM.created_at.desc()", cascade="all, delete-orphan"
+    )
+
+
+class JournalEntryORM(Base):
+    __tablename__ = "journal_entries"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True)
+    trip_id: Mapped[str] = mapped_column(String, ForeignKey("trips.id", ondelete="CASCADE"), nullable=False)
+    date: Mapped[str] = mapped_column(String, nullable=False)  # YYYY-MM-DD, the day of travel
+    body: Mapped[str] = mapped_column(Text, nullable=False)
+    source: Mapped[str] = mapped_column(String, nullable=False, default="app")  # app | telegram | email
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
+
+    trip: Mapped["TripORM"] = relationship("TripORM", back_populates="journal_entries")
+
+
+class ConnectedContentORM(Base):
+    __tablename__ = "connected_content"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True)
+    trip_id: Mapped[str] = mapped_column(String, ForeignKey("trips.id", ondelete="CASCADE"), nullable=False)
+    type: Mapped[str] = mapped_column(String, nullable=False, default="other")  # album | instagram | tiktok | blog | other
+    url: Mapped[str] = mapped_column(String, nullable=False)
+    title: Mapped[str | None] = mapped_column(String, nullable=True)
+    thumbnail_url: Mapped[str | None] = mapped_column(String, nullable=True)
+    captured_at: Mapped[str | None] = mapped_column(String, nullable=True)  # ISO date when content was created
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
+
+    trip: Mapped["TripORM"] = relationship("TripORM", back_populates="connected_content")
 
 
 class ConversationORM(Base):
