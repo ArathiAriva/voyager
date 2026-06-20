@@ -20,14 +20,22 @@ Voyager is an AI-native solo travel companion that understands not just where yo
 
 ## Core Features (by phase)
 
-| Phase | Feature |
-|-------|---------|
-| Month 1 | Chat interface, itinerary generation, basic tool use (search, weather) |
-| Month 2 | Trip memory, preference learning, semantic + episodic memory |
-| Month 3 | Journal ingestion, RAG over personal travel notes and saved places |
-| Month 4 | Multi-agent planning (Planner → Research → Critic → Synthesizer) |
-| Month 5 | Evaluation layer — measure recommendation quality over time |
-| Month 6 | Production deployment, streaming, auth, caching, observability |
+| Phase | Feature | Status |
+|-------|---------|--------|
+| Month 1 | Chat interface, itinerary generation, basic tool use (weather, exchange rates via MCP) | ✅ Done |
+| Month 2 | Trip memory, preference learning, semantic + episodic memory | 🔄 In progress |
+| Month 3 | Journal ingestion, RAG over personal travel notes and saved places | — |
+| Month 4 | Multi-agent planning (Planner → Research → Critic → Synthesizer) | — |
+| Month 5 | Evaluation layer — measure recommendation quality over time | — |
+| Month 6 | Production deployment, streaming, auth, caching, observability | — |
+
+### Month 2 progress
+
+- [x] Episodic memory — per-conversation summaries stored in Chroma, retrieved via `search_memory` tool
+- [x] Semantic memory — distilled user preferences extracted post-conversation and embedded in Chroma
+- [x] Memory retrieval — agent proactively searches memory before answering personalisation-relevant queries
+- [ ] Trip journal entries — freeform notes per trip
+- [ ] Preference evolution — track how preferences change over time
 
 ---
 
@@ -36,47 +44,42 @@ Voyager is an AI-native solo travel companion that understands not just where yo
 ```
 ┌──────────────────────────┐
 │       Next.js UI         │
-│  Chat · Maps · Journals  │
+│     Chat · Trips         │
 └──────────┬───────────────┘
-           │ HTTPS
+           │ HTTP
            ▼
-┌──────────────────────────┐
-│     FastAPI Backend      │
-│  Auth · Sessions · API   │
-└──────────┬───────────────┘
-           │
-           ▼
-┌──────────────────────────┐
-│    Agent Orchestrator    │
-│        LangGraph         │
-└───┬────────┬────────┬────┘
-    │        │        │
-    ▼        ▼        ▼
-Memory   Retrieval   Tools
-System    (RAG)      Layer
-    │        │        │
-    ▼        ▼        ▼
- Qdrant  LlamaIndex  MCP
- Postgres            Server
+┌──────────────────────────┐        ┌─────────────────────────┐
+│     FastAPI Backend      │ stdio  │   MCP Travel Tools      │
+│   Agent tool-call loop   │───────▶│   get_weather           │
+└───┬──────────────────────┘        │   get_exchange_rate     │
+    │                               └─────────────────────────┘
+    ├──▶ SQLite
+    │    trips · conversations · messages
+    │
+    └──▶ Chroma (local)
+         episodic memory · semantic preferences
 ```
+
+*Month 4 will introduce LangGraph for multi-agent orchestration and replace the custom loop.*
 
 ---
 
 ## Tech Stack
 
-| Layer | Tech |
-|-------|------|
-| Frontend | Next.js, React, TypeScript, Tailwind, Chakra UI |
-| Backend | Python, FastAPI, Pydantic, SQLAlchemy |
-| AI Orchestration | LangGraph |
-| LLM | Anthropic Claude / OpenAI |
-| Vector DB | Qdrant |
-| Relational DB | PostgreSQL (Supabase) |
-| Embeddings | OpenAI or Voyage |
-| Auth | Clerk or Auth.js |
-| Evaluation | LangSmith |
-| Frontend Deploy | Vercel |
-| Backend Deploy | Railway or Fly.io |
+| Layer | Tech | Notes |
+|-------|------|-------|
+| Frontend | Next.js, React, TypeScript, Tailwind, Chakra UI | |
+| Backend | Python, FastAPI, Pydantic, SQLAlchemy | |
+| Agent loop | Custom tool-call loop (OpenAI-compatible) | LangGraph planned for Month 4 |
+| LLM | OpenRouter (Anthropic Claude via API) | Direct Anthropic SDK migration planned |
+| Vector DB | Chroma (local) | `all-MiniLM-L6-v2` embeddings, no API key needed; swap to pgvector or Qdrant later |
+| Relational DB | SQLite (dev) → PostgreSQL/Supabase (prod) | |
+| Embeddings | Chroma built-in (local ONNX) | Swap to OpenAI or Voyage when moving to prod |
+| Tool protocol | MCP (stdio) | Weather + exchange rate tools in standalone MCP server |
+| Auth | Clerk or Auth.js | Month 6 |
+| Evaluation | LangSmith | Month 5 |
+| Frontend Deploy | Vercel | Month 6 |
+| Backend Deploy | Railway or Fly.io | Month 6 |
 
 ---
 

@@ -9,6 +9,7 @@ mcp-server/**/__pycache__/
 mcp-server/**/*.pyc
 backend/.env
 backend/voyager.db
+backend/chroma_db/
 
 # Node
 frontend/node_modules/

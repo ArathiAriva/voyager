@@ -16,17 +16,20 @@ An AI-native travel companion that remembers your trips, helps you plan, and giv
 │  Agent Loop     │        │  get_exchange_rate         │
 └────────┬────────┘        └──────────────────────────┘
          │
-         ▼
-      SQLite
+         ├──▶ SQLite (trips, conversations, messages)
+         │
+         └──▶ Chroma (episodic + semantic memory)
 ```
 
 The backend runs the agentic tool-call loop. Tools that need the local database (`get_trips`) live in the backend. External API tools (`get_weather`, `get_exchange_rate`) live in the MCP server — independently reusable by any MCP-compatible agent.
+
+The memory system runs entirely locally — no external API needed. After each conversation, the agent extracts a summary (episodic) and any revealed preferences (semantic) and stores them in Chroma using the `all-MiniLM-L6-v2` embedding model. On subsequent conversations the agent can call `search_memory` to retrieve relevant context.
 
 ## Project structure
 
 ```
 voyager/
-├── backend/          # FastAPI backend + agent loop
+├── backend/          # FastAPI backend + agent loop + memory system
 ├── frontend/         # Next.js chat UI
 └── mcp-server/       # Voyager MCP travel tools server
 ```
@@ -120,6 +123,21 @@ Add to your Claude Code MCP config (`~/.claude/mcp_config.json` or project `.cla
   }
 }
 ```
+
+---
+
+## Memory system
+
+Voyager has an episodic and semantic memory system backed by [Chroma](https://www.trychroma.com/) running locally.
+
+| Memory type | What's stored | How it's used |
+|-------------|--------------|----------------|
+| Episodic | One-sentence summary of each conversation | Retrieved when past experiences are relevant |
+| Semantic | Distilled user preferences (e.g. "prefers boutique hotels") | Retrieved to personalise recommendations |
+
+After each reply the backend runs a background LLM pass to extract the episode and any preferences, then upserts them into Chroma. The agent has a `search_memory` tool it calls proactively when personalisation would help.
+
+**Embeddings:** Chroma's built-in `all-MiniLM-L6-v2` model (runs locally via ONNX, no API key needed). The model (~80 MB) is downloaded on first use to `~/.cache/chroma/`. Chroma data persists to `backend/chroma_db/`.
 
 ---
 

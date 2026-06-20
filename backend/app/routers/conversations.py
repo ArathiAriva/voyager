@@ -1,3 +1,4 @@
+import asyncio
 import json
 import logging
 import uuid
@@ -13,6 +14,7 @@ from app.models.conversation import Conversation, ConversationSummary, SendMessa
 from app.claude import get_client, get_model
 from app.tools import TOOL_SCHEMAS, execute_tool
 from app.mcp_client import mcp_tool_schemas, call_mcp_tool
+from app import memory
 
 logger = logging.getLogger("voyager.conversations")
 
@@ -25,8 +27,62 @@ SYSTEM_PROMPT = (
     "You have access to the user's saved trips via the get_trips tool — use it whenever their "
     "travel history or upcoming plans would help you give a more personalised answer. "
     "You have access to real-time weather forecasts via the get_weather tool — use it whenever "
-    "the user asks about weather, packing, or conditions at a destination."
+    "the user asks about weather, packing, or conditions at a destination. "
+    "You have a memory of past conversations and learned user preferences via the search_memory "
+    "tool — use it at the start of any conversation where knowing the user's travel style, "
+    "past experiences, or preferences would improve your answer."
 )
+
+EXTRACTION_PROMPT = """You are a memory extraction assistant for a travel app.
+Given a conversation, extract:
+1. A one-sentence episode summary describing what happened in this conversation.
+2. A list of specific user preferences or facts revealed (empty list if none).
+
+Respond with JSON only, no prose:
+{
+  "episode": "...",
+  "preferences": ["...", "..."]
+}
+
+Preferences should be concrete and reusable (e.g. "prefers boutique hotels over chains", "dislikes overly touristy areas", "enjoys street food"). Omit vague or uninformative entries."""
+
+
+async def _extract_and_store_memory(conversation_id: str, history: list[dict]) -> None:
+    """Fire-and-forget: extract episode + preferences from the conversation and store in Chroma."""
+    try:
+        client = get_client()
+        transcript = "\n".join(
+            f"{m['role'].upper()}: {m['content']}"
+            for m in history
+            if isinstance(m.get("content"), str) and m["role"] in ("user", "assistant")
+        )
+        response = await client.chat.completions.create(
+            model=get_model(),
+            messages=[
+                {"role": "system", "content": EXTRACTION_PROMPT},
+                {"role": "user", "content": transcript},
+            ],
+        )
+        raw = (response.choices[0].message.content or "").strip()
+        # Strip markdown code fences if the model wrapped the JSON
+        if raw.startswith("```"):
+            raw = raw.split("```")[1]
+            if raw.startswith("json"):
+                raw = raw[4:]
+            raw = raw.strip()
+        if not raw:
+            logger.warning("conv=%s | memory extraction returned empty response", conversation_id[:8])
+            return
+        extracted = json.loads(raw)
+        episode = extracted.get("episode", "").strip()
+        preferences = [p for p in extracted.get("preferences", []) if p.strip()]
+        if episode:
+            memory.store_episode(conversation_id, episode)
+        if preferences:
+            memory.store_preferences(preferences)
+        logger.info("conv=%s | memory extraction complete: 1 episode, %d preferences", conversation_id[:8], len(preferences))
+    except Exception:
+        logger.exception("conv=%s | memory extraction failed (non-fatal)", conversation_id[:8])
 
 
 @router.get("", response_model=list[ConversationSummary])
@@ -186,6 +242,10 @@ async def send_message(
     conversation.updated_at = datetime.now(timezone.utc)
     await session.commit()
     await session.refresh(reply_msg)
+
+    # Extract memories in the background — non-blocking, failures are logged not raised
+    asyncio.create_task(_extract_and_store_memory(conversation_id, history))
+
     return reply_msg
 
 
