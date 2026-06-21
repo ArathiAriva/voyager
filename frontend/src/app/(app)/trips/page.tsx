@@ -15,13 +15,13 @@ const STATUS_OPTIONS = createListCollection({
   ],
 });
 
-const EMOJI_OPTIONS = ["✈️","🏖️","🏔️","🗺️","🏯","🌮","🌊","🌍","🏕️","🚂","🛳️","🗼"];
+const EMOJI_OPTIONS = ["🧭","🏖️","🏔️","🗺️","🏯","🌮","🌊","🌍","🏕️","🚂","🛳️","🗼"];
 
 const EMPTY_FORM: TripCreate = {
   destination: "",
   dates: "",
   status: "upcoming",
-  emoji: "✈️",
+  emoji: "🧭",
   summary: "",
   tags: [],
 };
@@ -72,20 +72,32 @@ export default function TripsPage() {
   }
 
   return (
-    <Box p={8}>
-      <VStack align="start" gap={6} w="full">
-        <HStack justify="space-between" w="full">
+    <Box p={10}>
+      <VStack align="start" gap={8} w="full">
+        <HStack justify="space-between" w="full" align="end">
           <Box>
-            <Text fontSize="2xl" fontWeight="bold">Your Trips</Text>
-            <Text color="gray.500" fontSize="sm">Every journey, remembered.</Text>
+            <Text fontSize="xs" fontWeight="600" letterSpacing="0.1em" textTransform="uppercase" color="text.secondary" mb={2}>Your journeys</Text>
+            <Text fontSize="3xl" fontWeight="800" letterSpacing="-0.03em" lineHeight="1.1">Trips</Text>
           </Box>
-          <Button colorPalette="blue" size="sm" onClick={() => setShowModal(true)}>
+          <Box
+            as="button"
+            onClick={() => setShowModal(true)}
+            px={5}
+            py={2.5}
+            bg="accent.active"
+            color="bg.page"
+            borderRadius="full"
+            fontSize="sm"
+            fontWeight="700"
+            _hover={{ opacity: 0.88 }}
+            transition="opacity 0.15s"
+          >
             + New trip
-          </Button>
+          </Box>
         </HStack>
 
         {loading && (
-          <Flex align="center" gap={2} color="gray.400">
+          <Flex align="center" gap={2} color="text.secondary">
             <Spinner size="sm" />
             <Text fontSize="sm">Loading trips...</Text>
           </Flex>
@@ -102,33 +114,37 @@ export default function TripsPage() {
             {trips.map((trip) => (
               <Box
                 key={trip.id}
-                bg="white"
-                borderRadius="xl"
-                p={5}
-                boxShadow="sm"
-                border="1px solid"
-                borderColor="gray.100"
-                _hover={{ boxShadow: "md", borderColor: "blue.100" }}
-                transition="all 0.15s"
+                bg="bg.surface"
+                borderRadius="2xl"
+                p={6}
+                boxShadow="0 4px 24px rgba(0,0,0,0.22)"
+                border="none"
+                _hover={{ boxShadow: "0 8px 32px rgba(0,0,0,0.32)", transform: "translateY(-2px)" }}
+                transition="all 0.2s"
                 cursor="pointer"
                 position="relative"
                 onClick={() => router.push(`/trips/${trip.id}`)}
               >
-                <HStack justify="space-between" mb={3}>
-                  <Text fontSize="2xl">{trip.emoji}</Text>
+                <HStack justify="space-between" mb={4}>
+                  <Text fontSize="3xl">{trip.emoji}</Text>
                   <HStack gap={2}>
                     <Badge
                       colorPalette={trip.status === "upcoming" ? "blue" : "gray"}
                       borderRadius="full"
-                      px={2}
+                      px={3}
+                      py={1}
+                      fontSize="xs"
+                      fontWeight="600"
+                      textTransform="uppercase"
+                      letterSpacing="0.05em"
                     >
                       {trip.status}
                     </Badge>
                     <Button
                       size="xs"
                       variant="ghost"
-                      color="gray.400"
-                      _hover={{ color: "red.500", bg: "red.50" }}
+                      color="text.secondary"
+                      _hover={{ color: "red.400", bg: "transparent" }}
                       onClick={(e) => handleDelete(e, trip.id)}
                       loading={deletingId === trip.id}
                       aria-label="Delete trip"
@@ -138,13 +154,15 @@ export default function TripsPage() {
                     </Button>
                   </HStack>
                 </HStack>
-                <Text fontWeight="semibold" fontSize="lg">{trip.destination}</Text>
-                <Text fontSize="sm" color="gray.400" mb={2}>{trip.dates}</Text>
-                <Text fontSize="sm" color="gray.600" lineHeight="tall">{trip.summary}</Text>
+                <Text fontWeight="800" fontSize="xl" letterSpacing="-0.02em" lineHeight="1.2" mb={1}>{trip.destination}</Text>
+                <Text fontSize="xs" color="text.secondary" mb={2} fontWeight="500" letterSpacing="0.03em">{trip.dates}</Text>
+                <Text fontSize="sm" color="text.secondary" lineHeight="1.65">{trip.summary}</Text>
                 {trip.tags && trip.tags.length > 0 && (
-                  <HStack mt={3} gap={1} flexWrap="wrap">
+                  <HStack mt={4} gap={1.5} flexWrap="wrap">
                     {trip.tags.map((tag) => (
-                      <Badge key={tag} size="sm" variant="subtle" colorPalette="gray">{tag}</Badge>
+                      <Box key={tag} px={2.5} py={0.5} borderRadius="full" border="1px solid" borderColor="border.muted" fontSize="xs" color="text.secondary" fontWeight="500">
+                        {tag}
+                      </Box>
                     ))}
                   </HStack>
                 )}
@@ -152,23 +170,23 @@ export default function TripsPage() {
             ))}
 
             <Box
-              bg="gray.50"
-              borderRadius="xl"
-              p={5}
+              bg="transparent"
+              borderRadius="2xl"
+              p={6}
               border="2px dashed"
-              borderColor="gray.200"
+              borderColor="border.muted"
               display="flex"
               alignItems="center"
               justifyContent="center"
               cursor="pointer"
-              _hover={{ borderColor: "blue.300", bg: "blue.50" }}
-              transition="all 0.15s"
-              minH="160px"
+              _hover={{ borderColor: "accent.active" }}
+              transition="all 0.2s"
+              minH="180px"
               onClick={() => setShowModal(true)}
             >
-              <VStack gap={1} color="gray.400">
-                <Text fontSize="2xl">+</Text>
-                <Text fontSize="sm">Add a trip</Text>
+              <VStack gap={2} color="text.secondary">
+                <Text fontSize="2xl" lineHeight="1">+</Text>
+                <Text fontSize="sm" fontWeight="500" letterSpacing="0.02em">Add a trip</Text>
               </VStack>
             </Box>
           </Grid>
@@ -184,7 +202,7 @@ export default function TripsPage() {
             onClick={() => setShowModal(false)}
           >
             <Box
-              bg="white" borderRadius="2xl" p={8} w="full" maxW="480px" mx={4}
+              bg="bg.surface" borderRadius="2xl" p={8} w="full" maxW="480px" mx={4}
               boxShadow="2xl"
               onClick={(e) => e.stopPropagation()}
             >
@@ -193,7 +211,7 @@ export default function TripsPage() {
               <VStack gap={4} align="stretch">
                 {/* Emoji picker */}
                 <Box>
-                  <Text fontSize="sm" fontWeight="medium" mb={2} color="gray.600">Emoji</Text>
+                  <Text fontSize="sm" fontWeight="medium" mb={2} color="text.secondary">Emoji</Text>
                   <HStack gap={2} flexWrap="wrap">
                     {EMOJI_OPTIONS.map((e) => (
                       <Box
@@ -202,9 +220,9 @@ export default function TripsPage() {
                         cursor="pointer"
                         p={1}
                         borderRadius="md"
-                        bg={form.emoji === e ? "blue.50" : "transparent"}
+                        bg={form.emoji === e ? "accent.activeBg" : "transparent"}
                         border="2px solid"
-                        borderColor={form.emoji === e ? "blue.300" : "transparent"}
+                        borderColor={form.emoji === e ? "accent.active" : "transparent"}
                         onClick={() => setForm((f) => ({ ...f, emoji: e }))}
                       >
                         {e}
@@ -214,7 +232,7 @@ export default function TripsPage() {
                 </Box>
 
                 <Box>
-                  <Text fontSize="sm" fontWeight="medium" mb={1} color="gray.600">Destination *</Text>
+                  <Text fontSize="sm" fontWeight="medium" mb={1} color="text.secondary">Destination *</Text>
                   <Input
                     placeholder="e.g. Kyoto, Japan"
                     value={form.destination}
@@ -223,7 +241,7 @@ export default function TripsPage() {
                 </Box>
 
                 <Box>
-                  <Text fontSize="sm" fontWeight="medium" mb={1} color="gray.600">Dates *</Text>
+                  <Text fontSize="sm" fontWeight="medium" mb={1} color="text.secondary">Dates *</Text>
                   <Input
                     placeholder="e.g. March 2025 or Apr 10–17 2025"
                     value={form.dates}
@@ -232,7 +250,7 @@ export default function TripsPage() {
                 </Box>
 
                 <Box>
-                  <Text fontSize="sm" fontWeight="medium" mb={1} color="gray.600">Status</Text>
+                  <Text fontSize="sm" fontWeight="medium" mb={1} color="text.secondary">Status</Text>
                   <HStack gap={3}>
                     {(["upcoming", "past"] as const).map((s) => (
                       <Button
@@ -249,7 +267,7 @@ export default function TripsPage() {
                 </Box>
 
                 <Box>
-                  <Text fontSize="sm" fontWeight="medium" mb={1} color="gray.600">Summary</Text>
+                  <Text fontSize="sm" fontWeight="medium" mb={1} color="text.secondary">Summary</Text>
                   <Textarea
                     placeholder="A short description of the trip..."
                     value={form.summary}

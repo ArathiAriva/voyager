@@ -2,6 +2,7 @@
 
 import { useState, useRef, useEffect, useCallback } from "react";
 import { Box, Flex, Text, Input, VStack, HStack, Spinner } from "@chakra-ui/react";
+import { useRouter } from "next/navigation";
 import ReactMarkdown from "react-markdown";
 import {
   fetchConversations,
@@ -11,7 +12,54 @@ import {
   deleteConversation,
   type ConversationSummary,
   type Message,
+  type Trip,
 } from "@/lib/api";
+
+function TripActionCard({ trip, action }: { trip: Trip; action: "trip_created" | "trip_updated" }) {
+  const router = useRouter();
+  return (
+    <Box
+      mt={2}
+      px={4}
+      py={3}
+      bg="accent.activeBg"
+      borderRadius="xl"
+      border="1px solid"
+      borderColor="accent.active"
+      display="flex"
+      alignItems="center"
+      justifyContent="space-between"
+      gap={4}
+    >
+      <HStack gap={3}>
+        <Text fontSize="xl" lineHeight="1">{trip.emoji}</Text>
+        <Box>
+          <Text fontSize="xs" fontWeight="700" letterSpacing="0.08em" textTransform="uppercase" color="accent.active" mb={0.5}>
+            {action === "trip_created" ? "Trip saved" : "Trip updated"}
+          </Text>
+          <Text fontSize="sm" fontWeight="600" color="text.bright">{trip.destination}</Text>
+          <Text fontSize="xs" color="text.dim">{trip.dates}</Text>
+        </Box>
+      </HStack>
+      <Box
+        as="button"
+        onClick={() => router.push(`/trips/${trip.id}`)}
+        px={3}
+        py={1.5}
+        bg="accent.active"
+        color="bg.page"
+        borderRadius="full"
+        fontSize="xs"
+        fontWeight="700"
+        _hover={{ opacity: 0.88 }}
+        transition="opacity 0.15s"
+        flexShrink={0}
+      >
+        View →
+      </Box>
+    </Box>
+  );
+}
 
 export default function ChatPage() {
   const [conversations, setConversations] = useState<ConversationSummary[]>([]);
@@ -100,40 +148,45 @@ export default function ChatPage() {
 
   return (
     <Flex h="100vh">
-      {/* Sidebar */}
+      {/* Conversation list panel */}
       <Flex
         direction="column"
-        w="260px"
+        w="280px"
         flexShrink={0}
         borderRight="1px solid"
-        borderColor="gray.200"
-        bg="gray.50"
+        borderColor="border.default"
+        bg="bg.subtle"
       >
-        <Box px={3} py={4} borderBottom="1px solid" borderColor="gray.200">
+        <Box px={5} pt={6} pb={4} borderBottom="1px solid" borderColor="border.default">
+          <Text fontSize="xs" fontWeight="600" letterSpacing="0.1em" textTransform="uppercase" color="text.secondary" mb={3}>
+            Conversations
+          </Text>
           <Box
             as="button"
             onClick={handleNewChat}
             w="full"
-            py={2}
-            px={3}
-            bg="blue.500"
-            color="white"
-            borderRadius="lg"
+            py={2.5}
+            px={4}
+            bg="accent.active"
+            color="bg.page"
+            borderRadius="full"
             fontSize="sm"
-            fontWeight="medium"
-            textAlign="left"
-            _hover={{ bg: "blue.600" }}
+            fontWeight="700"
+            textAlign="center"
+            _hover={{ opacity: 0.88 }}
             display="flex"
             alignItems="center"
+            justifyContent="center"
             gap={2}
+            transition="opacity 0.15s"
           >
             <Text>+ New chat</Text>
           </Box>
         </Box>
 
-        <VStack flex={1} overflowY="auto" gap={0} align="stretch" py={2}>
+        <VStack flex={1} overflowY="auto" gap={0} align="stretch" py={3} px={3}>
           {conversations.length === 0 && (
-            <Text fontSize="xs" color="gray.400" px={3} py={2}>
+            <Text fontSize="xs" color="text.secondary" px={2} py={3}>
               No conversations yet
             </Text>
           )}
@@ -141,20 +194,20 @@ export default function ChatPage() {
             <Box
               key={conv.id}
               px={3}
-              py={2}
+              py={3}
+              borderRadius="xl"
               cursor="pointer"
-              bg={activeId === conv.id ? "blue.50" : "transparent"}
-              borderLeft="3px solid"
-              borderColor={activeId === conv.id ? "blue.500" : "transparent"}
-              _hover={{ bg: activeId === conv.id ? "blue.50" : "gray.100" }}
+              bg={activeId === conv.id ? "bg.surface" : "transparent"}
+              _hover={{ bg: "bg.surface" }}
               onClick={() => openConversation(conv.id)}
               role="group"
               position="relative"
+              transition="background 0.1s"
             >
-              <Text fontSize="sm" fontWeight={activeId === conv.id ? "medium" : "normal"} color="gray.800" pr={5} overflow="hidden" textOverflow="ellipsis" whiteSpace="nowrap">
+              <Text fontSize="sm" fontWeight={activeId === conv.id ? "600" : "400"} color="text.primary" pr={6} overflow="hidden" textOverflow="ellipsis" whiteSpace="nowrap" letterSpacing="-0.01em">
                 {conv.title}
               </Text>
-              <Text fontSize="xs" color="gray.400" mt={0.5}>
+              <Text fontSize="xs" color="text.secondary" mt={0.5} letterSpacing="0.01em">
                 {new Date(conv.updated_at).toLocaleDateString()}
               </Text>
               <Box
@@ -166,10 +219,11 @@ export default function ChatPage() {
                 opacity={0}
                 _groupHover={{ opacity: 1 }}
                 onClick={(e: React.MouseEvent) => handleDelete(conv.id, e)}
-                color="gray.400"
-                _hover={{ color: "red.500" }}
+                color="text.secondary"
+                _hover={{ color: "red.400" }}
                 fontSize="sm"
                 lineHeight={1}
+                transition="opacity 0.1s"
               >
                 ×
               </Box>
@@ -180,101 +234,111 @@ export default function ChatPage() {
 
       {/* Chat area */}
       <Flex direction="column" flex={1} minW={0}>
-        <Box px={6} py={4} borderBottom="1px solid" borderColor="gray.200" bg="white">
-          <Text fontSize="lg" fontWeight="semibold">
+        <Box px={8} py={5} borderBottom="1px solid" borderColor="border.default">
+          <Text fontSize="xl" fontWeight="800" letterSpacing="-0.03em">
             Chat with Voyager
           </Text>
-          <Text fontSize="sm" color="gray.500">
+          <Text fontSize="xs" color="text.secondary" mt={0.5} letterSpacing="0.06em" textTransform="uppercase" fontWeight="500">
             Your AI travel companion
           </Text>
         </Box>
 
-        <VStack flex={1} overflowY="auto" px={6} py={4} align="stretch" gap={4}>
+        <VStack flex={1} overflowY="auto" px={8} py={6} align="stretch" gap={5}>
           {!activeId && (
             <Flex h="full" align="center" justify="center">
               <Box textAlign="center">
-                <Text fontSize="2xl" mb={2}>✈️</Text>
-                <Text color="gray.500" fontSize="sm">Start a new chat or pick one from the left</Text>
+                <Text fontSize="3xl" mb={3}>🧭</Text>
+                <Text color="text.primary" fontSize="lg" fontWeight="700" letterSpacing="-0.02em" mb={1}>Where to next?</Text>
+                <Text color="text.secondary" fontSize="sm">Start a new chat or pick one from the left</Text>
               </Box>
             </Flex>
           )}
 
           {activeId && loadingConversation && (
             <Flex justify="center" pt={8}>
-              <Spinner color="blue.400" />
+              <Spinner color="accent.active" />
             </Flex>
           )}
 
           {activeId && !loadingConversation && messages.length === 0 && (
             <Flex h="full" align="center" justify="center">
               <Box textAlign="center">
-                <Text fontSize="2xl" mb={2}>✈️</Text>
-                <Text color="gray.500" fontSize="sm">Where are we going? Ask me anything about a destination.</Text>
+                <Text fontSize="3xl" mb={3}>🧭</Text>
+                <Text color="text.primary" fontSize="lg" fontWeight="700" letterSpacing="-0.02em" mb={1}>Where are we going?</Text>
+                <Text color="text.secondary" fontSize="sm">Ask me anything about a destination.</Text>
               </Box>
             </Flex>
           )}
 
           {messages.map((msg) => (
-            <Flex
-              key={msg.id}
-              justify={msg.role === "user" ? "flex-end" : "flex-start"}
-              align="flex-end"
-              gap={2}
-            >
-              {msg.role === "assistant" && (
-                <Box
-                  w={8}
-                  h={8}
-                  borderRadius="full"
-                  bg="blue.500"
-                  display="flex"
-                  alignItems="center"
-                  justifyContent="center"
-                  flexShrink={0}
-                >
-                  <Text fontSize="sm">✈️</Text>
-                </Box>
-              )}
-              <Box
-                maxW="70%"
-                px={4}
-                py={3}
-                borderRadius="xl"
-                bg={msg.role === "user" ? "blue.500" : "white"}
-                color={msg.role === "user" ? "white" : "gray.800"}
-                boxShadow="sm"
-                borderBottomRightRadius={msg.role === "user" ? "sm" : "xl"}
-                borderBottomLeftRadius={msg.role === "assistant" ? "sm" : "xl"}
+            <Box key={msg.id}>
+              <Flex
+                justify={msg.role === "user" ? "flex-end" : "flex-start"}
+                align="flex-end"
+                gap={3}
               >
-                {msg.role === "user" ? (
-                  <Text fontSize="sm" lineHeight="tall">
-                    {msg.content}
-                  </Text>
-                ) : (
-                  <Box fontSize="sm" lineHeight="tall" className="markdown">
-                    <ReactMarkdown>{msg.content}</ReactMarkdown>
+                {msg.role === "assistant" && (
+                  <Box
+                    w={8}
+                    h={8}
+                    borderRadius="full"
+                    bg="accent.active"
+                    display="flex"
+                    alignItems="center"
+                    justifyContent="center"
+                    flexShrink={0}
+                  >
+                    <Text fontSize="xs">🧭</Text>
                   </Box>
                 )}
-              </Box>
-            </Flex>
+                <Box
+                  maxW="68%"
+                  px={5}
+                  py={3.5}
+                  borderRadius="2xl"
+                  bg={msg.role === "user" ? "bubble.user" : "bubble.assistant"}
+                  color="text.primary"
+                  boxShadow="0 2px 12px rgba(0,0,0,0.18)"
+                  borderBottomRightRadius={msg.role === "user" ? "sm" : "2xl"}
+                  borderBottomLeftRadius={msg.role === "assistant" ? "sm" : "2xl"}
+                >
+                  {msg.role === "user" ? (
+                    <Text fontSize="sm" lineHeight="1.65">
+                      {msg.content}
+                    </Text>
+                  ) : (
+                    <Box fontSize="sm" lineHeight="1.65" className="markdown">
+                      <ReactMarkdown>{msg.content}</ReactMarkdown>
+                    </Box>
+                  )}
+                </Box>
+              </Flex>
+              {msg.trip_action && (
+                <Flex justify="flex-start" pl={11} mt={1}>
+                  <Box maxW="68%">
+                    <TripActionCard trip={msg.trip_action.trip} action={msg.trip_action.action} />
+                  </Box>
+                </Flex>
+              )}
+            </Box>
           ))}
 
           {loading && (
-            <Flex align="flex-end" gap={2}>
+            <Flex align="flex-end" gap={3}>
               <Box
                 w={8}
                 h={8}
                 borderRadius="full"
-                bg="blue.500"
+                bg="accent.active"
                 display="flex"
                 alignItems="center"
                 justifyContent="center"
                 flexShrink={0}
               >
-                <Text fontSize="sm">✈️</Text>
+                <Text fontSize="xs">🧭</Text>
               </Box>
-              <Box bg="white" px={4} py={3} borderRadius="xl" boxShadow="sm">
-                <Spinner size="sm" color="blue.400" />
+              <Box bg="bubble.assistant" px={5} py={3.5} borderRadius="2xl" borderBottomLeftRadius="sm" boxShadow="0 2px 12px rgba(0,0,0,0.18)">
+                <Spinner size="sm" color="accent.active" />
               </Box>
             </Flex>
           )}
@@ -282,32 +346,38 @@ export default function ChatPage() {
           <div ref={bottomRef} />
         </VStack>
 
-        <Box px={6} py={4} borderTop="1px solid" borderColor="gray.200" bg="white">
-          <HStack gap={2}>
+        <Box px={8} py={5} borderTop="1px solid" borderColor="border.default">
+          <HStack gap={3}>
             <Input
               placeholder={activeId ? "Ask about a destination, plan a trip…" : "Start a new chat to begin"}
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && handleSend()}
               borderRadius="full"
-              bg="gray.50"
+              bg="bg.surface"
+              color="text.primary"
+              fontSize="sm"
+              px={5}
               disabled={loading || !activeId}
-              _focus={{ bg: "white", borderColor: "blue.400" }}
+              _focus={{ bg: "bg.surface", borderColor: "accent.active" }}
             />
             <Box
               as="button"
               onClick={handleSend}
-              bg={loading || !activeId ? "gray.300" : "blue.500"}
-              color="white"
+              bg={loading || !activeId ? "bg.muted" : "accent.active"}
+              color="bg.page"
               borderRadius="full"
               w={10}
               h={10}
               display="flex"
               alignItems="center"
               justifyContent="center"
-              _hover={{ bg: loading || !activeId ? "gray.300" : "blue.600" }}
+              fontWeight="700"
+              fontSize="lg"
+              _hover={{ opacity: loading || !activeId ? 1 : 0.88 }}
               flexShrink={0}
               cursor={loading || !activeId ? "not-allowed" : "pointer"}
+              transition="opacity 0.15s"
             >
               ↑
             </Box>

@@ -24,6 +24,15 @@ SYSTEM_PROMPT = (
     "You are Voyager, an AI travel companion. "
     "Help users plan trips, discover destinations, build itineraries, and get local tips. "
     "Be concise, warm, and enthusiastic about travel. "
+    "\n\n"
+    "TRIP MANAGEMENT:\n"
+    "You can create and update trips in the user's Voyager profile using the create_trip and update_trip tools.\n"
+    "- When the user discusses a specific trip they are planning or have taken, proactively offer to save it: "
+    "ask once, naturally — e.g. 'Want me to save this as a trip in Voyager?'\n"
+    "- NEVER call create_trip or update_trip without explicit user confirmation first.\n"
+    "- When editing, call get_trips first to find the correct trip ID.\n"
+    "- After creating or updating a trip, confirm it briefly: 'Done! I've saved [destination] to your trips.'\n"
+    "\n"
     "You have access to the user's saved trips via the get_trips tool — use it whenever their "
     "travel history or upcoming plans would help you give a more personalised answer. "
     "You have access to real-time weather forecasts via the get_weather tool — use it whenever "
@@ -167,6 +176,7 @@ async def send_message(
 
     client = get_client()
     iteration = 0
+    trip_action: dict | None = None  # set if create_trip / update_trip fires
     # Agentic tool-call loop: keep going until the model returns a plain text reply
     try:
         while True:
@@ -219,6 +229,14 @@ async def send_message(
                     result = await call_mcp_tool(tc.function.name, args)
                 else:
                     result = await execute_tool(tc.function.name, args, session)
+                # Capture trip create/update actions for the frontend
+                if tc.function.name in ("create_trip", "update_trip"):
+                    try:
+                        parsed = json.loads(result)
+                        if "action" in parsed:
+                            trip_action = parsed
+                    except Exception:
+                        pass
                 history.append({
                     "role": "tool",
                     "tool_call_id": tc.id,
@@ -246,7 +264,14 @@ async def send_message(
     # Extract memories in the background — non-blocking, failures are logged not raised
     asyncio.create_task(_extract_and_store_memory(conversation_id, history))
 
-    return reply_msg
+    from app.models.conversation import Message as MessageSchema
+    return MessageSchema(
+        id=reply_msg.id,
+        role=reply_msg.role,
+        content=reply_msg.content,
+        created_at=reply_msg.created_at,
+        trip_action=trip_action,
+    )
 
 
 @router.delete("/{conversation_id}", status_code=204)

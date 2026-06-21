@@ -2,11 +2,17 @@ const BASE_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
 export type Role = "user" | "assistant";
 
+export interface TripAction {
+  action: "trip_created" | "trip_updated";
+  trip: Trip;
+}
+
 export interface Message {
   id: string;
   role: Role;
   content: string;
   created_at: string;
+  trip_action?: TripAction | null;
 }
 
 export interface Conversation {

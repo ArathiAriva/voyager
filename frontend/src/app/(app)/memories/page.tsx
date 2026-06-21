@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Box, VStack, HStack, Text, Badge, Grid, Spinner, Flex } from "@chakra-ui/react";
+import { Box, VStack, Text, Grid, Spinner, Flex } from "@chakra-ui/react";
 import { fetchMemories, type Memories } from "@/lib/api";
 
 export default function MemoriesPage() {
@@ -19,28 +19,28 @@ export default function MemoriesPage() {
   const isEmpty = memories && memories.episodes.length === 0 && memories.preferences.length === 0;
 
   return (
-    <Box p={8}>
-      <VStack align="start" gap={6} w="full">
+    <Box p={10}>
+      <VStack align="start" gap={8} w="full">
         <Box>
-          <Text fontSize="2xl" fontWeight="bold">Memories</Text>
-          <Text color="gray.500" fontSize="sm">What Voyager has learned about how you travel.</Text>
+          <Text fontSize="xs" fontWeight="600" letterSpacing="0.1em" textTransform="uppercase" color="text.secondary" mb={2}>What Voyager knows</Text>
+          <Text fontSize="3xl" fontWeight="800" letterSpacing="-0.03em" lineHeight="1.1">Memories</Text>
         </Box>
 
         {loading && (
-          <Flex align="center" gap={2} color="gray.400">
+          <Flex align="center" gap={2} color="text.secondary">
             <Spinner size="sm" />
             <Text fontSize="sm">Loading memories...</Text>
           </Flex>
         )}
 
         {error && (
-          <Box w="full" p={4} bg="red.50" borderRadius="lg" border="1px solid" borderColor="red.200">
+          <Box w="full" p={4} bg="red.950" borderRadius="lg" border="1px solid" borderColor="red.800">
             <Text fontSize="sm" color="red.600">{error}</Text>
           </Box>
         )}
 
         {isEmpty && (
-          <Box py={16} w="full" textAlign="center" color="gray.400">
+          <Box py={16} w="full" textAlign="center" color="text.secondary">
             <Text fontSize="3xl" mb={3}>🧠</Text>
             <Text fontSize="sm" fontWeight="medium">No memories yet.</Text>
             <Text fontSize="sm" mt={1}>
@@ -51,24 +51,20 @@ export default function MemoriesPage() {
 
         {memories && memories.preferences.length > 0 && (
           <VStack align="stretch" gap={3} w="full">
-            <Text fontSize="sm" fontWeight="semibold" color="gray.500" textTransform="uppercase" letterSpacing="wide">
+            <Text fontSize="sm" fontWeight="semibold" color="text.muted" textTransform="uppercase" letterSpacing="wide">
               Preferences
             </Text>
             <Grid templateColumns="repeat(auto-fill, minmax(300px, 1fr))" gap={3} w="full">
               {memories.preferences.map((pref, i) => (
                 <Box
                   key={i}
-                  bg="white"
-                  borderRadius="xl"
-                  p={4}
-                  boxShadow="sm"
-                  border="1px solid"
-                  borderColor="gray.100"
+                  bg="bg.surface"
+                  borderRadius="2xl"
+                  p={5}
+                  boxShadow="0 4px 20px rgba(0,0,0,0.2)"
+                  border="none"
                 >
-                  <HStack mb={2}>
-                    <Badge colorPalette="blue" borderRadius="full" px={2} size="sm">preference</Badge>
-                  </HStack>
-                  <Text fontSize="sm" color="gray.700" lineHeight="tall">{pref}</Text>
+                  <Text fontSize="sm" color="text.dim" lineHeight="tall">{pref}</Text>
                 </Box>
               ))}
             </Grid>
@@ -77,24 +73,20 @@ export default function MemoriesPage() {
 
         {memories && memories.episodes.length > 0 && (
           <VStack align="stretch" gap={3} w="full">
-            <Text fontSize="sm" fontWeight="semibold" color="gray.500" textTransform="uppercase" letterSpacing="wide">
+            <Text fontSize="sm" fontWeight="semibold" color="text.muted" textTransform="uppercase" letterSpacing="wide">
               Past conversations
             </Text>
             <VStack align="stretch" gap={2} w="full">
               {memories.episodes.map((ep, i) => (
                 <Box
                   key={i}
-                  bg="white"
-                  borderRadius="xl"
-                  p={4}
-                  boxShadow="sm"
-                  border="1px solid"
-                  borderColor="gray.100"
+                  bg="bg.surface"
+                  borderRadius="2xl"
+                  p={5}
+                  boxShadow="0 4px 20px rgba(0,0,0,0.2)"
+                  border="none"
                 >
-                  <HStack mb={2}>
-                    <Badge colorPalette="purple" borderRadius="full" px={2} size="sm">episode</Badge>
-                  </HStack>
-                  <Text fontSize="sm" color="gray.700" lineHeight="tall">{ep}</Text>
+                  <Text fontSize="sm" color="text.dim" lineHeight="tall">{ep}</Text>
                 </Box>
               ))}
             </VStack>

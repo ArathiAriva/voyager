@@ -112,7 +112,7 @@ export default function TripDetailPage() {
 
   if (loading) {
     return (
-      <Flex p={8} align="center" gap={2} color="gray.400">
+      <Flex p={8} align="center" gap={2} color="text.secondary">
         <Spinner size="sm" />
         <Text fontSize="sm">Loading trip...</Text>
       </Flex>
@@ -132,7 +132,7 @@ export default function TripDetailPage() {
     <Box p={8} maxW="860px">
       {/* Header */}
       <HStack mb={2} gap={2}>
-        <Button size="xs" variant="ghost" color="gray.400" onClick={() => router.push("/trips")}>
+        <Button size="xs" variant="ghost" color="text.secondary" onClick={() => router.push("/trips")}>
           ← Trips
         </Button>
       </HStack>
@@ -146,8 +146,8 @@ export default function TripDetailPage() {
               {trip.status}
             </Badge>
           </HStack>
-          <Text fontSize="sm" color="gray.400">{trip.dates}</Text>
-          {trip.summary && <Text fontSize="sm" color="gray.600" mt={1}>{trip.summary}</Text>}
+          <Text fontSize="sm" color="text.secondary">{trip.dates}</Text>
+          {trip.summary && <Text fontSize="sm" color="text.secondary" mt={1}>{trip.summary}</Text>}
           {trip.tags && trip.tags.length > 0 && (
             <HStack mt={2} gap={1} flexWrap="wrap">
               {trip.tags.map((tag) => (
@@ -159,7 +159,7 @@ export default function TripDetailPage() {
       </HStack>
 
       {/* Tabs */}
-      <HStack mb={6} borderBottom="2px solid" borderColor="gray.100" gap={0}>
+      <HStack mb={6} borderBottom="2px solid" borderColor="border.default" gap={0}>
         {(["journal", "content"] as Tab[]).map((t) => (
           <Button
             key={t}
@@ -170,7 +170,7 @@ export default function TripDetailPage() {
             borderRadius={0}
             borderBottom="2px solid"
             borderColor={tab === t ? "blue.500" : "transparent"}
-            color={tab === t ? "blue.600" : "gray.500"}
+            color={tab === t ? "accent.active" : "text.muted"}
             fontWeight={tab === t ? "semibold" : "normal"}
             _hover={{ color: "blue.600", bg: "transparent" }}
             onClick={() => setTab(t)}
@@ -184,7 +184,7 @@ export default function TripDetailPage() {
       {tab === "journal" && (
         <VStack align="stretch" gap={4}>
           <HStack justify="space-between">
-            <Text fontSize="sm" color="gray.500">
+            <Text fontSize="sm" color="text.muted">
               {entries.length === 0 ? "No entries yet." : `${entries.length} entr${entries.length === 1 ? "y" : "ies"}`}
             </Text>
             <Button size="sm" colorPalette="blue" variant="outline" onClick={() => setShowEntryForm((v) => !v)}>
@@ -193,10 +193,10 @@ export default function TripDetailPage() {
           </HStack>
 
           {showEntryForm && (
-            <Box bg="gray.50" borderRadius="xl" p={5} border="1px solid" borderColor="gray.200">
+            <Box bg="bg.subtle" borderRadius="xl" p={5} border="1px solid" borderColor="border.default">
               <VStack align="stretch" gap={3}>
                 <Box>
-                  <Text fontSize="sm" fontWeight="medium" mb={1} color="gray.600">Date</Text>
+                  <Text fontSize="sm" fontWeight="medium" mb={1} color="text.secondary">Date</Text>
                   <Input
                     type="date"
                     value={entryDate}
@@ -205,7 +205,7 @@ export default function TripDetailPage() {
                   />
                 </Box>
                 <Box>
-                  <Text fontSize="sm" fontWeight="medium" mb={1} color="gray.600">Entry</Text>
+                  <Text fontSize="sm" fontWeight="medium" mb={1} color="text.secondary">Entry</Text>
                   <Textarea
                     placeholder="What happened today? What did you discover, feel, or want to remember?"
                     value={entryBody}
@@ -230,7 +230,7 @@ export default function TripDetailPage() {
           )}
 
           {entries.length === 0 && !showEntryForm && (
-            <Box py={12} textAlign="center" color="gray.400">
+            <Box py={12} textAlign="center" color="text.secondary">
               <Text fontSize="3xl" mb={2}>📓</Text>
               <Text fontSize="sm">Start writing about your trip.</Text>
             </Box>
@@ -239,16 +239,16 @@ export default function TripDetailPage() {
           {entries.map((entry) => (
             <Box
               key={entry.id}
-              bg="white"
+              bg="bg.surface"
               borderRadius="xl"
               p={5}
               border="1px solid"
-              borderColor="gray.100"
+              borderColor="border.default"
               boxShadow="sm"
             >
               <HStack justify="space-between" mb={3}>
                 <HStack gap={2}>
-                  <Text fontSize="sm" fontWeight="semibold" color="gray.700">
+                  <Text fontSize="sm" fontWeight="semibold" color="text.bright">
                     {new Date(entry.date + "T00:00:00").toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric", year: "numeric" })}
                   </Text>
                   {entry.source !== "app" && (
@@ -258,7 +258,7 @@ export default function TripDetailPage() {
                 <Button
                   size="xs"
                   variant="ghost"
-                  color="gray.300"
+                  color="text.dim"
                   _hover={{ color: "red.400" }}
                   loading={deletingEntryId === entry.id}
                   onClick={() => handleDeleteEntry(entry.id)}
@@ -267,7 +267,7 @@ export default function TripDetailPage() {
                   ✕
                 </Button>
               </HStack>
-              <Text fontSize="sm" color="gray.700" whiteSpace="pre-wrap" lineHeight="tall">
+              <Text fontSize="sm" color="text.dim" whiteSpace="pre-wrap" lineHeight="tall">
                 {entry.body}
               </Text>
             </Box>
@@ -279,7 +279,7 @@ export default function TripDetailPage() {
       {tab === "content" && (
         <VStack align="stretch" gap={4}>
           <HStack justify="space-between">
-            <Text fontSize="sm" color="gray.500">
+            <Text fontSize="sm" color="text.muted">
               {content.length === 0 ? "No links yet." : `${content.length} link${content.length === 1 ? "" : "s"}`}
             </Text>
             <Button size="sm" colorPalette="blue" variant="outline" onClick={() => setShowContentForm((v) => !v)}>
@@ -288,10 +288,10 @@ export default function TripDetailPage() {
           </HStack>
 
           {showContentForm && (
-            <Box bg="gray.50" borderRadius="xl" p={5} border="1px solid" borderColor="gray.200">
+            <Box bg="bg.subtle" borderRadius="xl" p={5} border="1px solid" borderColor="border.default">
               <VStack align="stretch" gap={3}>
                 <Box>
-                  <Text fontSize="sm" fontWeight="medium" mb={1} color="gray.600">URL</Text>
+                  <Text fontSize="sm" fontWeight="medium" mb={1} color="text.secondary">URL</Text>
                   <Input
                     placeholder="https://photos.google.com/album/..."
                     value={contentUrl}
@@ -300,7 +300,7 @@ export default function TripDetailPage() {
                   />
                 </Box>
                 <Box>
-                  <Text fontSize="sm" fontWeight="medium" mb={1} color="gray.600">Type</Text>
+                  <Text fontSize="sm" fontWeight="medium" mb={1} color="text.secondary">Type</Text>
                   <HStack gap={2} flexWrap="wrap">
                     {(["album", "instagram", "tiktok", "blog", "other"] as const).map((t) => (
                       <Button
@@ -331,7 +331,7 @@ export default function TripDetailPage() {
           )}
 
           {content.length === 0 && !showContentForm && (
-            <Box py={12} textAlign="center" color="gray.400">
+            <Box py={12} textAlign="center" color="text.secondary">
               <Text fontSize="3xl" mb={2}>🔗</Text>
               <Text fontSize="sm">Connect photos, posts, and links from this trip.</Text>
             </Box>
@@ -341,10 +341,10 @@ export default function TripDetailPage() {
             {content.map((item) => (
               <Box
                 key={item.id}
-                bg="white"
+                bg="bg.surface"
                 borderRadius="xl"
                 border="1px solid"
-                borderColor="gray.100"
+                borderColor="border.default"
                 boxShadow="sm"
                 overflow="hidden"
                 w="200px"
@@ -353,24 +353,22 @@ export default function TripDetailPage() {
                 transition="all 0.15s"
               >
                 {item.thumbnail_url ? (
-                  <Box
-                    as="img"
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
                     src={item.thumbnail_url}
                     alt={item.title ?? ""}
-                    w="full"
-                    h="120px"
-                    objectFit="cover"
+                    style={{ width: "100%", height: "120px", objectFit: "cover" }}
                   />
                 ) : (
-                  <Flex h="120px" align="center" justify="center" bg="gray.50" fontSize="3xl">
+                  <Flex h="120px" align="center" justify="center" bg="bg.subtle" fontSize="3xl">
                     {item.type === "album" ? "📷" : item.type === "instagram" ? "📸" : item.type === "tiktok" ? "🎵" : item.type === "blog" ? "📝" : "🔗"}
                   </Flex>
                 )}
                 <Box p={3}>
-                  <Text fontSize="xs" fontWeight="semibold" color="gray.700" noOfLines={2} lineClamp={2}>
+                  <Text fontSize="xs" fontWeight="semibold" color="text.bright" lineClamp={2}>
                     {item.title ?? new URL(item.url).hostname}
                   </Text>
-                  <Text fontSize="xs" color="gray.400" mt={0.5} noOfLines={1} lineClamp={1}>
+                  <Text fontSize="xs" color="text.secondary" mt={0.5} lineClamp={1}>
                     {item.type}
                   </Text>
                 </Box>
@@ -387,7 +385,7 @@ export default function TripDetailPage() {
                   <Button
                     size="xs"
                     variant="ghost"
-                    color="gray.300"
+                    color="text.dim"
                     _hover={{ color: "red.400" }}
                     loading={deletingContentId === item.id}
                     onClick={() => handleDeleteContent(item.id)}

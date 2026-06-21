@@ -10,6 +10,8 @@ To add a new tool: add its schema to TOOL_SCHEMAS and its executor to TOOL_EXECU
 
 import json
 import logging
+import uuid
+from datetime import datetime, timezone
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.orm import TripORM
@@ -46,6 +48,84 @@ TOOL_SCHEMAS = [
     {
         "type": "function",
         "function": {
+            "name": "create_trip",
+            "description": (
+                "Save a new trip to the user's Voyager profile. "
+                "IMPORTANT: Always ask the user for confirmation before calling this tool. "
+                "Only call it after the user has explicitly agreed to save the trip. "
+                "Pick an appropriate travel emoji for the destination."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "destination": {
+                        "type": "string",
+                        "description": "The trip destination, e.g. 'Kyoto, Japan'.",
+                    },
+                    "dates": {
+                        "type": "string",
+                        "description": "Human-readable date range, e.g. 'April 10–17 2025' or 'Summer 2026'.",
+                    },
+                    "status": {
+                        "type": "string",
+                        "enum": ["past", "upcoming"],
+                        "description": "Whether this is a past or upcoming trip.",
+                    },
+                    "emoji": {
+                        "type": "string",
+                        "description": "A single emoji representing the destination or trip vibe.",
+                    },
+                    "summary": {
+                        "type": "string",
+                        "description": "A short 1-2 sentence description of the trip.",
+                    },
+                    "tags": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Optional tags, e.g. ['beach', 'solo', 'budget'].",
+                    },
+                },
+                "required": ["destination", "dates", "status", "emoji"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "update_trip",
+            "description": (
+                "Update an existing trip in the user's Voyager profile. "
+                "Call get_trips first to find the trip ID. "
+                "IMPORTANT: Always confirm with the user before making changes. "
+                "Only include fields that should change."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "trip_id": {
+                        "type": "string",
+                        "description": "The ID of the trip to update.",
+                    },
+                    "destination": {"type": "string"},
+                    "dates": {"type": "string"},
+                    "status": {
+                        "type": "string",
+                        "enum": ["past", "upcoming"],
+                    },
+                    "emoji": {"type": "string"},
+                    "summary": {"type": "string"},
+                    "tags": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                    },
+                },
+                "required": ["trip_id"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "get_trips",
             "description": (
                 "Retrieve the user's saved trips from their Voyager profile. "
@@ -69,6 +149,60 @@ TOOL_SCHEMAS = [
 ]
 
 # ── Executors (called when the LLM fires a tool) ─────────────────────────────
+
+async def _execute_create_trip(args: dict, session: AsyncSession) -> str:
+    trip = TripORM(
+        id=str(uuid.uuid4()),
+        destination=args["destination"],
+        dates=args["dates"],
+        status=args["status"],
+        emoji=args.get("emoji", "🧭"),
+        summary=args.get("summary", ""),
+        tags=args.get("tags", []),
+    )
+    session.add(trip)
+    await session.commit()
+    await session.refresh(trip)
+    logger.info("Tool create_trip: created trip %s (%s)", trip.id[:8], trip.destination)
+    return json.dumps({
+        "action": "trip_created",
+        "trip": {
+            "id": trip.id,
+            "destination": trip.destination,
+            "dates": trip.dates,
+            "status": trip.status,
+            "emoji": trip.emoji,
+            "summary": trip.summary,
+            "tags": trip.tags,
+        },
+    })
+
+
+async def _execute_update_trip(args: dict, session: AsyncSession) -> str:
+    trip_id = args.get("trip_id")
+    trip = await session.get(TripORM, trip_id)
+    if not trip:
+        return json.dumps({"error": f"Trip {trip_id} not found."})
+    updatable = ("destination", "dates", "status", "emoji", "summary", "tags")
+    for field in updatable:
+        if field in args:
+            setattr(trip, field, args[field])
+    await session.commit()
+    await session.refresh(trip)
+    logger.info("Tool update_trip: updated trip %s (%s)", trip.id[:8], trip.destination)
+    return json.dumps({
+        "action": "trip_updated",
+        "trip": {
+            "id": trip.id,
+            "destination": trip.destination,
+            "dates": trip.dates,
+            "status": trip.status,
+            "emoji": trip.emoji,
+            "summary": trip.summary,
+            "tags": trip.tags,
+        },
+    })
+
 
 async def _execute_get_trips(args: dict, session: AsyncSession) -> str:
     status_filter = args.get("status", "all")
@@ -101,6 +235,8 @@ async def _execute_search_memory(args: dict, session: AsyncSession) -> str:
 
 
 TOOL_EXECUTORS = {
+    "create_trip": _execute_create_trip,
+    "update_trip": _execute_update_trip,
     "get_trips": _execute_get_trips,
     "search_memory": _execute_search_memory,
 }

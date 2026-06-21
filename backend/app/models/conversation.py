@@ -1,6 +1,6 @@
 from pydantic import BaseModel
 from datetime import datetime
-from typing import Literal
+from typing import Any, Literal
 
 
 class Message(BaseModel):
@@ -8,6 +8,7 @@ class Message(BaseModel):
     role: Literal["user", "assistant"]
     content: str
     created_at: datetime
+    trip_action: dict[str, Any] | None = None
 
     model_config = {"from_attributes": True}
 
