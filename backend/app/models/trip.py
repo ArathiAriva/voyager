@@ -1,15 +1,24 @@
+from datetime import datetime
 from pydantic import BaseModel
 from typing import Literal
+
+
+class ItineraryDay(BaseModel):
+    day: int
+    date: str | None = None  # e.g. "2025-04-10"
+    title: str = ""
+    plan: str  # freeform markdown or prose for the day
 
 
 class TripBase(BaseModel):
     destination: str
     dates: str
-    status: Literal["past", "upcoming"]
+    status: Literal["past", "upcoming", "active"]
     emoji: str
     summary: str = ""
     cover_photo_url: str | None = None
     tags: list[str] = []
+    itinerary: list[ItineraryDay] | None = None
 
 
 class TripCreate(TripBase):
@@ -19,11 +28,12 @@ class TripCreate(TripBase):
 class TripUpdate(BaseModel):
     destination: str | None = None
     dates: str | None = None
-    status: Literal["past", "upcoming"] | None = None
+    status: Literal["past", "upcoming", "active"] | None = None
     emoji: str | None = None
     summary: str | None = None
     cover_photo_url: str | None = None
     tags: list[str] | None = None
+    itinerary: list[ItineraryDay] | None = None
 
 
 class Trip(TripBase):
@@ -73,5 +83,40 @@ class ConnectedContent(ConnectedContentBase):
     trip_id: str
     title: str | None = None
     thumbnail_url: str | None = None
+
+    model_config = {"from_attributes": True}
+
+
+# ── Saved places ─────────────────────────────────────────────────────────────
+
+PlaceCategory = Literal["restaurant", "cafe", "bar", "hotel", "neighbourhood", "attraction", "shop", "beach", "other"]
+
+
+class SavedPlaceBase(BaseModel):
+    name: str
+    url: str | None = None
+    category: PlaceCategory = "other"
+    address: str | None = None
+    notes: str | None = None
+
+
+class SavedPlaceCreate(SavedPlaceBase):
+    pass
+
+
+class SavedPlaceUpdate(BaseModel):
+    name: str | None = None
+    category: PlaceCategory | None = None
+    address: str | None = None
+    notes: str | None = None
+
+
+class SavedPlace(SavedPlaceBase):
+    id: str
+    trip_id: str
+    summary: str | None = None
+    thumbnail_url: str | None = None
+    enrichment_status: Literal["none", "pending", "done", "failed"] = "none"
+    created_at: datetime
 
     model_config = {"from_attributes": True}

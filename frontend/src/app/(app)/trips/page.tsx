@@ -117,9 +117,9 @@ export default function TripsPage() {
                 bg="bg.surface"
                 borderRadius="2xl"
                 p={6}
-                boxShadow="0 4px 24px rgba(0,0,0,0.22)"
+                boxShadow={trip.status === "active" ? "0 0 0 2px var(--chakra-colors-green-500), 0 4px 24px rgba(0,0,0,0.22)" : "0 4px 24px rgba(0,0,0,0.22)"}
                 border="none"
-                _hover={{ boxShadow: "0 8px 32px rgba(0,0,0,0.32)", transform: "translateY(-2px)" }}
+                _hover={{ boxShadow: trip.status === "active" ? "0 0 0 2px var(--chakra-colors-green-400), 0 8px 32px rgba(0,0,0,0.32)" : "0 8px 32px rgba(0,0,0,0.32)", transform: "translateY(-2px)" }}
                 transition="all 0.2s"
                 cursor="pointer"
                 position="relative"
@@ -129,7 +129,7 @@ export default function TripsPage() {
                   <Text fontSize="3xl">{trip.emoji}</Text>
                   <HStack gap={2}>
                     <Badge
-                      colorPalette={trip.status === "upcoming" ? "blue" : "gray"}
+                      colorPalette={trip.status === "active" ? "green" : trip.status === "upcoming" ? "blue" : "gray"}
                       borderRadius="full"
                       px={3}
                       py={1}
@@ -138,7 +138,7 @@ export default function TripsPage() {
                       textTransform="uppercase"
                       letterSpacing="0.05em"
                     >
-                      {trip.status}
+                      {trip.status === "active" ? "🟢 Active" : trip.status}
                     </Badge>
                     <Button
                       size="xs"
@@ -252,15 +252,15 @@ export default function TripsPage() {
                 <Box>
                   <Text fontSize="sm" fontWeight="medium" mb={1} color="text.secondary">Status</Text>
                   <HStack gap={3}>
-                    {(["upcoming", "past"] as const).map((s) => (
+                    {(["upcoming", "active", "past"] as const).map((s) => (
                       <Button
                         key={s}
                         size="sm"
                         variant={form.status === s ? "solid" : "outline"}
-                        colorPalette={form.status === s ? "blue" : "gray"}
+                        colorPalette={form.status === s ? (s === "active" ? "green" : "blue") : "gray"}
                         onClick={() => setForm((f) => ({ ...f, status: s }))}
                       >
-                        {s === "upcoming" ? "Upcoming" : "Past"}
+                        {s === "upcoming" ? "Upcoming" : s === "active" ? "🟢 Active" : "Past"}
                       </Button>
                     ))}
                   </HStack>

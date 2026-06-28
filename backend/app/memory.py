@@ -110,6 +110,70 @@ def search_journals(query: str, trip_id: str | None = None, n_results: int = 5) 
     return hits
 
 
+def _places() -> chromadb.Collection:
+    return _get_client().get_or_create_collection("saved_places")
+
+
+def store_saved_place(
+    place_id: str, trip_id: str, destination: str, name: str, category: str, text: str
+) -> None:
+    """Embed a saved place for RAG retrieval."""
+    _places().upsert(
+        ids=[place_id],
+        documents=[text],
+        metadatas=[{"trip_id": trip_id, "destination": destination, "name": name, "category": category}],
+    )
+    logger.info("memory | saved place embedded: place=%s trip=%s", place_id[:8], trip_id[:8])
+
+
+def delete_saved_place(place_id: str) -> None:
+    try:
+        _places().delete(ids=[place_id])
+        logger.info("memory | saved place removed: place=%s", place_id[:8])
+    except Exception:
+        logger.warning("memory | could not delete saved place %s (may not exist)", place_id[:8])
+
+
+def search_saved_places(
+    query: str,
+    trip_id: str | None = None,
+    category: str | None = None,
+    n_results: int = 8,
+) -> list[dict]:
+    collection = _places()
+    count = collection.count()
+    if count == 0:
+        return []
+    if trip_id and category:
+        where: dict = {"$and": [{"trip_id": trip_id}, {"category": category}]}
+    elif trip_id:
+        where = {"trip_id": trip_id}
+    elif category:
+        where = {"category": category}
+    else:
+        where = {}
+    kwargs: dict = {"query_texts": [query], "n_results": min(n_results, count)}
+    if where:
+        kwargs["where"] = where
+    results = collection.query(**kwargs)
+    hits = []
+    if results["documents"]:
+        for doc, meta, cid in zip(
+            results["documents"][0],
+            results["metadatas"][0],  # type: ignore[index]
+            results["ids"][0],
+        ):
+            hits.append({
+                "place_id": cid,
+                "destination": meta.get("destination", ""),
+                "name": meta.get("name", ""),
+                "category": meta.get("category", ""),
+                "text": doc,
+            })
+    logger.info("memory | places search '%s' → %d hits", query[:40], len(hits))
+    return hits
+
+
 def search_memory(query: str, n_results: int = 5) -> dict:
     """
     Search both episodic and semantic collections for memories relevant to the query.

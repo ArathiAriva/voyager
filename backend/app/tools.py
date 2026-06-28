@@ -68,8 +68,8 @@ TOOL_SCHEMAS = [
                     },
                     "status": {
                         "type": "string",
-                        "enum": ["past", "upcoming"],
-                        "description": "Whether this is a past or upcoming trip.",
+                        "enum": ["past", "upcoming", "active"],
+                        "description": "Whether this is a past, upcoming, or currently active trip.",
                     },
                     "emoji": {
                         "type": "string",
@@ -110,7 +110,7 @@ TOOL_SCHEMAS = [
                     "dates": {"type": "string"},
                     "status": {
                         "type": "string",
-                        "enum": ["past", "upcoming"],
+                        "enum": ["past", "upcoming", "active"],
                     },
                     "emoji": {"type": "string"},
                     "summary": {"type": "string"},
@@ -153,6 +153,95 @@ TOOL_SCHEMAS = [
     {
         "type": "function",
         "function": {
+            "name": "save_place",
+            "description": (
+                "Save a specific place (restaurant, hotel, neighbourhood, attraction, etc.) "
+                "to one of the user's trips. Use this when the user mentions a place they want "
+                "to remember or visit. Call get_trips first to find the trip_id. "
+                "If the user provides a URL, include it — the app will automatically enrich it. "
+                "Otherwise save with a name and notes."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "trip_id": {"type": "string", "description": "ID of the trip to attach this place to."},
+                    "name": {"type": "string", "description": "Name of the place, e.g. 'Ichiran Ramen Shinjuku'."},
+                    "url": {"type": "string", "description": "URL for the place (website, Google Maps, blog post). Always include this if you have it — the app uses it to fetch a thumbnail image and enrich the place details automatically."},
+                    "category": {
+                        "type": "string",
+                        "enum": ["restaurant", "cafe", "bar", "hotel", "neighbourhood", "attraction", "shop", "beach", "other"],
+                    },
+                    "address": {"type": "string", "description": "Street address if known."},
+                    "notes": {"type": "string", "description": "Why this place is interesting or worth visiting."},
+                },
+                "required": ["trip_id", "name"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "search_places",
+            "description": (
+                "Search the user's saved places semantically. Use this when the user asks about "
+                "places they've bookmarked, or when building an itinerary and you want to incorporate "
+                "their saved spots. Optionally scope to one trip or one category."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string", "description": "What to search for, e.g. 'great ramen' or 'boutique hotels'."},
+                    "trip_id": {"type": "string", "description": "Optional: restrict to one trip."},
+                    "category": {
+                        "type": "string",
+                        "enum": ["restaurant", "cafe", "bar", "hotel", "neighbourhood", "attraction", "shop", "beach", "other"],
+                        "description": "Optional: filter by place type.",
+                    },
+                },
+                "required": ["query"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "set_itinerary",
+            "description": (
+                "Save a day-by-day itinerary for a trip. "
+                "Use this after planning an upcoming or active trip with the user. "
+                "Call get_trips first to find the trip ID. "
+                "Each day should have a day number, optional date (YYYY-MM-DD), optional title, "
+                "and a plan describing activities, logistics, and recommendations for that day."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "trip_id": {
+                        "type": "string",
+                        "description": "The ID of the trip to attach the itinerary to.",
+                    },
+                    "days": {
+                        "type": "array",
+                        "description": "Ordered list of days in the itinerary.",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "day": {"type": "integer", "description": "Day number, starting from 1."},
+                                "date": {"type": "string", "description": "Date in YYYY-MM-DD format, if known."},
+                                "title": {"type": "string", "description": "Short title for the day, e.g. 'Arrival & Arashiyama'."},
+                                "plan": {"type": "string", "description": "Activities, places, logistics, and tips for this day."},
+                            },
+                            "required": ["day", "plan"],
+                        },
+                    },
+                },
+                "required": ["trip_id", "days"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "get_trips",
             "description": (
                 "Retrieve the user's saved trips from their Voyager profile. "
@@ -165,7 +254,7 @@ TOOL_SCHEMAS = [
                 "properties": {
                     "status": {
                         "type": "string",
-                        "enum": ["all", "past", "upcoming"],
+                        "enum": ["all", "past", "upcoming", "active"],
                         "description": "Filter trips by status. Defaults to 'all'.",
                     }
                 },
@@ -231,6 +320,76 @@ async def _execute_update_trip(args: dict, session: AsyncSession) -> str:
     })
 
 
+async def _execute_save_place(args: dict, session: AsyncSession) -> str:
+    import asyncio
+    from app.models.orm import SavedPlaceORM
+    from app.routers.places import _enrich_place
+    from app.utils import fetch_og_metadata
+    from datetime import datetime, timezone
+
+    trip_id = args.get("trip_id")
+    trip = await session.get(TripORM, trip_id)
+    if not trip:
+        return json.dumps({"error": f"Trip {trip_id} not found."})
+
+    url = args.get("url")
+    thumbnail_url: str | None = None
+    if url:
+        _, thumbnail_url = await fetch_og_metadata(url)
+
+    place = SavedPlaceORM(
+        id=str(uuid.uuid4()),
+        trip_id=trip_id,
+        name=args["name"],
+        url=url,
+        category=args.get("category", "other"),
+        address=args.get("address"),
+        notes=args.get("notes"),
+        thumbnail_url=thumbnail_url,
+        enrichment_status="pending" if url else "none",
+        created_at=datetime.now(timezone.utc),
+    )
+    session.add(place)
+    await session.commit()
+    await session.refresh(place)
+
+    embed_text = place.notes or place.name
+    memory.store_saved_place(place.id, trip_id, trip.destination, place.name, place.category, embed_text)
+
+    if place.url:
+        asyncio.create_task(_enrich_place(place.id, place.url, trip.destination))
+
+    logger.info("Tool save_place: saved place=%s (%s) for trip=%s", place.id[:8], place.name, trip_id[:8])
+    return json.dumps({"action": "place_saved", "place_id": place.id, "name": place.name})
+
+
+async def _execute_search_places(args: dict, session: AsyncSession) -> str:
+    hits = memory.search_saved_places(
+        args["query"],
+        trip_id=args.get("trip_id"),
+        category=args.get("category"),
+    )
+    if not hits:
+        return json.dumps({"message": "No saved places found matching that query."})
+    return json.dumps({"results": hits})
+
+
+async def _execute_set_itinerary(args: dict, session: AsyncSession) -> str:
+    trip_id = args.get("trip_id")
+    trip = await session.get(TripORM, trip_id)
+    if not trip:
+        return json.dumps({"error": f"Trip {trip_id} not found."})
+    trip.itinerary = args.get("days", [])
+    await session.commit()
+    await session.refresh(trip)
+    logger.info("Tool set_itinerary: saved %d days for trip %s (%s)", len(trip.itinerary), trip.id[:8], trip.destination)
+    return json.dumps({
+        "action": "itinerary_saved",
+        "trip_id": trip.id,
+        "days": len(trip.itinerary),
+    })
+
+
 async def _execute_get_trips(args: dict, session: AsyncSession) -> str:
     status_filter = args.get("status", "all")
     query = select(TripORM)
@@ -274,6 +433,9 @@ async def _execute_search_memory(args: dict, session: AsyncSession) -> str:
 TOOL_EXECUTORS = {
     "create_trip": _execute_create_trip,
     "update_trip": _execute_update_trip,
+    "set_itinerary": _execute_set_itinerary,
+    "save_place": _execute_save_place,
+    "search_places": _execute_search_places,
     "get_trips": _execute_get_trips,
     "search_journal": _execute_search_journal,
     "search_memory": _execute_search_memory,

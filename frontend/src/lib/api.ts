@@ -30,21 +30,29 @@ export interface ConversationSummary {
   updated_at: string;
 }
 
+export interface ItineraryDay {
+  day: number;
+  date?: string | null;
+  title?: string;
+  plan: string;
+}
+
 export interface Trip {
   id: string;
   destination: string;
   dates: string;
-  status: "past" | "upcoming";
+  status: "past" | "upcoming" | "active";
   emoji: string;
   summary: string;
   cover_photo_url?: string | null;
   tags: string[];
+  itinerary?: ItineraryDay[] | null;
 }
 
 export interface TripCreate {
   destination: string;
   dates: string;
-  status: "past" | "upcoming";
+  status: "past" | "upcoming" | "active";
   emoji: string;
   summary?: string;
   tags?: string[];
@@ -132,7 +140,7 @@ export async function createTrip(body: TripCreate): Promise<Trip> {
 export interface TripUpdate {
   destination?: string;
   dates?: string;
-  status?: "past" | "upcoming";
+  status?: "past" | "upcoming" | "active";
   emoji?: string;
   summary?: string;
   tags?: string[];
@@ -197,6 +205,53 @@ export async function addContent(tripId: string, url: string, type: ConnectedCon
 export async function deleteContent(tripId: string, contentId: string): Promise<void> {
   const res = await fetch(`${BASE_URL}/api/trips/${tripId}/content/${contentId}`, { method: "DELETE" });
   if (!res.ok) throw new Error(`Delete content error: ${res.status}`);
+}
+
+// ── Saved places ─────────────────────────────────────────────────────────────
+
+export type PlaceCategory = "restaurant" | "cafe" | "bar" | "hotel" | "neighbourhood" | "attraction" | "shop" | "beach" | "other";
+
+export interface SavedPlace {
+  id: string;
+  trip_id: string;
+  name: string;
+  url?: string | null;
+  category: PlaceCategory;
+  address?: string | null;
+  notes?: string | null;
+  summary?: string | null;
+  thumbnail_url?: string | null;
+  enrichment_status: "none" | "pending" | "done" | "failed";
+  created_at: string;
+}
+
+export interface SavedPlaceCreate {
+  name: string;
+  url?: string;
+  category?: PlaceCategory;
+  address?: string;
+  notes?: string;
+}
+
+export async function fetchPlaces(tripId: string): Promise<SavedPlace[]> {
+  const res = await fetch(`${BASE_URL}/api/trips/${tripId}/places`);
+  if (!res.ok) throw new Error(`Places API error: ${res.status}`);
+  return res.json() as Promise<SavedPlace[]>;
+}
+
+export async function createPlace(tripId: string, body: SavedPlaceCreate): Promise<SavedPlace> {
+  const res = await fetch(`${BASE_URL}/api/trips/${tripId}/places`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error(`Create place error: ${res.status}`);
+  return res.json() as Promise<SavedPlace>;
+}
+
+export async function deletePlace(tripId: string, placeId: string): Promise<void> {
+  const res = await fetch(`${BASE_URL}/api/trips/${tripId}/places/${placeId}`, { method: "DELETE" });
+  if (!res.ok) throw new Error(`Delete place error: ${res.status}`);
 }
 
 // ── Memories ──────────────────────────────────────────────────────────────────

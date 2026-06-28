@@ -42,7 +42,10 @@ SYSTEM_PROMPT = (
     "past experiences, or preferences would improve your answer. "
     "You can search the user's personal travel journal via the search_journal tool — use it "
     "when they ask about specific experiences, meals, feelings, or places from a past trip. "
-    "Pass the trip_id (from get_trips) to scope the search to a single trip."
+    "Pass the trip_id (from get_trips) to scope the search to a single trip. "
+    "You can save specific places (restaurants, hotels, attractions, neighbourhoods) to a trip "
+    "using the save_place tool, and search them with search_places — use search_places when "
+    "building itineraries or when the user asks what they've bookmarked."
 )
 
 EXTRACTION_PROMPT = """You are a memory extraction assistant for a travel app.

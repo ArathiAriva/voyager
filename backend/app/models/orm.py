@@ -15,12 +15,16 @@ class TripORM(Base):
     summary: Mapped[str] = mapped_column(String, nullable=False, default="")
     cover_photo_url: Mapped[str | None] = mapped_column(String, nullable=True)
     tags: Mapped[list] = mapped_column(JSON, nullable=True, default=list)
+    itinerary: Mapped[list | None] = mapped_column(JSON, nullable=True, default=None)
 
     journal_entries: Mapped[list["JournalEntryORM"]] = relationship(
         "JournalEntryORM", back_populates="trip", order_by="JournalEntryORM.date.desc()", cascade="all, delete-orphan"
     )
     connected_content: Mapped[list["ConnectedContentORM"]] = relationship(
         "ConnectedContentORM", back_populates="trip", order_by="ConnectedContentORM.created_at.desc()", cascade="all, delete-orphan"
+    )
+    saved_places: Mapped[list["SavedPlaceORM"]] = relationship(
+        "SavedPlaceORM", back_populates="trip", order_by="SavedPlaceORM.created_at.desc()", cascade="all, delete-orphan"
     )
 
 
@@ -50,6 +54,24 @@ class ConnectedContentORM(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
 
     trip: Mapped["TripORM"] = relationship("TripORM", back_populates="connected_content")
+
+
+class SavedPlaceORM(Base):
+    __tablename__ = "saved_places"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True)
+    trip_id: Mapped[str] = mapped_column(String, ForeignKey("trips.id", ondelete="CASCADE"), nullable=False)
+    name: Mapped[str] = mapped_column(String, nullable=False)
+    url: Mapped[str | None] = mapped_column(String, nullable=True)
+    category: Mapped[str] = mapped_column(String, nullable=False, default="other")
+    address: Mapped[str | None] = mapped_column(String, nullable=True)
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    summary: Mapped[str | None] = mapped_column(Text, nullable=True)
+    thumbnail_url: Mapped[str | None] = mapped_column(String, nullable=True)
+    enrichment_status: Mapped[str] = mapped_column(String, nullable=False, default="none")
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
+
+    trip: Mapped["TripORM"] = relationship("TripORM", back_populates="saved_places")
 
 
 class ConversationORM(Base):
