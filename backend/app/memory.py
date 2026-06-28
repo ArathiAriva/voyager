@@ -9,19 +9,21 @@ The Chroma DB is persisted to ./chroma_db relative to where the server runs.
 """
 
 import logging
+import os
 import chromadb
 from chromadb.config import Settings
 
 logger = logging.getLogger("voyager.memory")
 
 _client: chromadb.ClientAPI | None = None
+_CHROMA_PATH = os.getenv("CHROMA_PATH", "./chroma_db")
 
 
 def _get_client() -> chromadb.ClientAPI:
     global _client
     if _client is None:
         _client = chromadb.PersistentClient(
-            path="./chroma_db",
+            path=_CHROMA_PATH,
             settings=Settings(anonymized_telemetry=False),
         )
     return _client
@@ -51,6 +53,61 @@ def store_preferences(preferences: list[str]) -> None:
         pref_id = str(abs(hash(pref)))
         collection.upsert(ids=[pref_id], documents=[pref])
     logger.info("memory | %d preference(s) upserted", len(preferences))
+
+
+def _journals() -> chromadb.Collection:
+    return _get_client().get_or_create_collection("journals")
+
+
+def store_journal_entry(entry_id: str, trip_id: str, destination: str, date: str, body: str) -> None:
+    """Embed a journal entry for RAG retrieval."""
+    _journals().upsert(
+        ids=[entry_id],
+        documents=[body],
+        metadatas=[{"trip_id": trip_id, "destination": destination, "date": date}],
+    )
+    logger.info("memory | journal entry embedded: entry=%s trip=%s", entry_id[:8], trip_id[:8])
+
+
+def delete_journal_entry(entry_id: str) -> None:
+    """Remove a journal entry from the vector store."""
+    try:
+        _journals().delete(ids=[entry_id])
+        logger.info("memory | journal entry removed: entry=%s", entry_id[:8])
+    except Exception:
+        logger.warning("memory | could not delete journal entry %s (may not exist)", entry_id[:8])
+
+
+def search_journals(query: str, trip_id: str | None = None, n_results: int = 5) -> list[dict]:
+    """
+    Search journal entries semantically.
+    Optionally scoped to a single trip via trip_id.
+    Returns a list of dicts with keys: entry_id, destination, date, text.
+    """
+    collection = _journals()
+    count = collection.count()
+    if count == 0:
+        return []
+    where = {"trip_id": trip_id} if trip_id else None
+    kwargs: dict = {"query_texts": [query], "n_results": min(n_results, count)}
+    if where:
+        kwargs["where"] = where
+    results = collection.query(**kwargs)
+    hits = []
+    if results["documents"]:
+        for doc, meta, cid in zip(
+            results["documents"][0],
+            results["metadatas"][0],  # type: ignore[index]
+            results["ids"][0],
+        ):
+            hits.append({
+                "entry_id": cid,
+                "destination": meta.get("destination", ""),
+                "date": meta.get("date", ""),
+                "text": doc,
+            })
+    logger.info("memory | journal search '%s' → %d hits", query[:40], len(hits))
+    return hits
 
 
 def search_memory(query: str, n_results: int = 5) -> dict:

@@ -11,7 +11,7 @@ from app.db import get_session
 from app.models.orm import TripORM, JournalEntryORM
 from app.models.trip import JournalEntry, JournalEntryCreate, JournalEntryUpdate
 from app.claude import get_client, get_model
-from app import memory
+from app import memory as mem
 
 logger = logging.getLogger("voyager.journal")
 
@@ -53,9 +53,9 @@ async def _extract_journal_memory(entry_id: str, trip_destination: str, body: st
         episode = extracted.get("episode", "").strip()
         preferences = [p for p in extracted.get("preferences", []) if p.strip()]
         if episode:
-            memory.store_episode(f"journal-{entry_id}", episode)
+            mem.store_episode(f"journal-{entry_id}", episode)
         if preferences:
-            memory.store_preferences(preferences)
+            mem.store_preferences(preferences)
         logger.info("journal | memory extraction complete for entry=%s: 1 episode, %d preferences", entry_id[:8], len(preferences))
     except Exception:
         logger.exception("journal | memory extraction failed for entry=%s (non-fatal)", entry_id[:8])
@@ -96,6 +96,7 @@ async def create_journal_entry(
     await session.commit()
     await session.refresh(entry)
     asyncio.create_task(_extract_journal_memory(entry.id, trip.destination, entry.body))
+    mem.store_journal_entry(entry.id, trip_id, trip.destination, entry.date, entry.body)
     return entry
 
 
@@ -114,6 +115,7 @@ async def update_journal_entry(
         setattr(entry, field, value)
     await session.commit()
     await session.refresh(entry)
+    mem.store_journal_entry(entry.id, trip_id, trip.destination, entry.date, entry.body)
     return entry
 
 
@@ -127,5 +129,6 @@ async def delete_journal_entry(
     entry = await session.get(JournalEntryORM, entry_id)
     if not entry or entry.trip_id != trip_id:
         raise HTTPException(status_code=404, detail="Journal entry not found")
+    mem.delete_journal_entry(entry_id)
     await session.delete(entry)
     await session.commit()

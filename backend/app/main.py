@@ -31,8 +31,9 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import select
 
-from app.db import SessionLocal
+from app.db import SessionLocal, engine, Base
 from app.models.orm import TripORM
+import app.models.orm  # noqa: F401 — ensure all ORM models are registered on Base.metadata
 from app.routers import trips, conversations, journal, content, memories
 
 app = FastAPI(title="Voyager API", version="0.1.0")
@@ -59,7 +60,9 @@ _SEED_TRIPS = [
 
 
 @app.on_event("startup")
-async def seed_trips() -> None:
+async def startup() -> None:
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
     async with SessionLocal() as session:
         existing = await session.execute(select(TripORM).limit(1))
         if existing.scalar() is None:

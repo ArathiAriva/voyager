@@ -39,7 +39,10 @@ SYSTEM_PROMPT = (
     "the user asks about weather, packing, or conditions at a destination. "
     "You have a memory of past conversations and learned user preferences via the search_memory "
     "tool — use it at the start of any conversation where knowing the user's travel style, "
-    "past experiences, or preferences would improve your answer."
+    "past experiences, or preferences would improve your answer. "
+    "You can search the user's personal travel journal via the search_journal tool — use it "
+    "when they ask about specific experiences, meals, feelings, or places from a past trip. "
+    "Pass the trip_id (from get_trips) to scope the search to a single trip."
 )
 
 EXTRACTION_PROMPT = """You are a memory extraction assistant for a travel app.

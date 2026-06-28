@@ -126,6 +126,33 @@ TOOL_SCHEMAS = [
     {
         "type": "function",
         "function": {
+            "name": "search_journal",
+            "description": (
+                "Search the user's travel journal entries using semantic similarity. "
+                "Use this when the user asks about specific experiences, feelings, meals, places, "
+                "or anything they might have written about during a trip. "
+                "Optionally scope the search to a single trip by providing its trip_id "
+                "(get it from get_trips). Returns matching journal excerpts with dates."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "What to search for, e.g. 'best meal' or 'felt overwhelmed by crowds'.",
+                    },
+                    "trip_id": {
+                        "type": "string",
+                        "description": "Optional trip ID to restrict the search to one trip.",
+                    },
+                },
+                "required": ["query"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "get_trips",
             "description": (
                 "Retrieve the user's saved trips from their Voyager profile. "
@@ -216,6 +243,7 @@ async def _execute_get_trips(args: dict, session: AsyncSession) -> str:
     return json.dumps({
         "trips": [
             {
+                "id": t.id,
                 "destination": t.destination,
                 "dates": t.dates,
                 "status": t.status,
@@ -224,6 +252,15 @@ async def _execute_get_trips(args: dict, session: AsyncSession) -> str:
             for t in trips
         ]
     })
+
+
+async def _execute_search_journal(args: dict, session: AsyncSession) -> str:
+    query = args.get("query", "")
+    trip_id = args.get("trip_id")
+    hits = memory.search_journals(query, trip_id=trip_id)
+    if not hits:
+        return json.dumps({"message": "No matching journal entries found."})
+    return json.dumps({"results": hits})
 
 
 async def _execute_search_memory(args: dict, session: AsyncSession) -> str:
@@ -238,6 +275,7 @@ TOOL_EXECUTORS = {
     "create_trip": _execute_create_trip,
     "update_trip": _execute_update_trip,
     "get_trips": _execute_get_trips,
+    "search_journal": _execute_search_journal,
     "search_memory": _execute_search_memory,
 }
 

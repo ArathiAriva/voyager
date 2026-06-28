@@ -10,6 +10,9 @@ mcp-server/**/*.pyc
 backend/.env
 backend/voyager.db
 backend/chroma_db/
+backend/data/
+backend/chroma_*/
+backend/profiles/.env.*
 
 # Node
 frontend/node_modules/

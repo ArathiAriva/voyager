@@ -129,6 +129,25 @@ export async function createTrip(body: TripCreate): Promise<Trip> {
   return res.json() as Promise<Trip>;
 }
 
+export interface TripUpdate {
+  destination?: string;
+  dates?: string;
+  status?: "past" | "upcoming";
+  emoji?: string;
+  summary?: string;
+  tags?: string[];
+}
+
+export async function updateTrip(id: string, body: TripUpdate): Promise<Trip> {
+  const res = await fetch(`${BASE_URL}/api/trips/${id}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error(`Update trip error: ${res.status}`);
+  return res.json() as Promise<Trip>;
+}
+
 export async function deleteTrip(id: string): Promise<void> {
   const res = await fetch(`${BASE_URL}/api/trips/${id}`, { method: "DELETE" });
   if (!res.ok) throw new Error(`Delete trip error: ${res.status}`);
