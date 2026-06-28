@@ -32,7 +32,7 @@ Tests cover:
 
 All external HTTP calls are mocked — no network needed.
 
-## Frontend (vitest, 12 tests)
+## Frontend unit (vitest, 12 tests)
 
 ```bash
 cd /Users/aarathi/claude-projects/voyager/frontend
@@ -41,7 +41,26 @@ npm test
 
 Tests cover all `api.ts` fetch wrappers — success responses and error throwing on non-ok status (`src/tests/api.test.ts`).
 
-## Run all three in sequence
+## Frontend E2E (Playwright, 10 smoke tests)
+
+**Requires dev server running on :3000.**
+
+```bash
+cd /Users/aarathi/claude-projects/voyager/frontend
+npm run test:e2e
+```
+
+Tests cover (`e2e/smoke.spec.ts`):
+- Navigation: redirect `/` → `/chat`, all nav links reachable
+- Sidebar: collapse/expand toggle, active item highlight
+- Theme switching: light/dark class applied to `<html>`, persists across navigation and reload
+- Chat and Trips pages: render without crashing
+
+**After any UI change**, run `npm run test:e2e` from the frontend directory to verify the golden paths still work before reporting the task done.
+
+Use `npm run test:e2e:ui` for interactive / debugging mode.
+
+## Run all suites in sequence
 
 ```bash
 cd /Users/aarathi/claude-projects/voyager
@@ -50,8 +69,10 @@ echo "=== Backend ===" && \
   cd backend && source .venv/bin/activate && pytest -v && cd .. && \
 echo "=== MCP Server ===" && \
   cd mcp-server && .venv/bin/pytest -v && cd .. && \
-echo "=== Frontend ===" && \
-  cd frontend && npm test && cd ..
+echo "=== Frontend unit ===" && \
+  cd frontend && npm test && \
+echo "=== Frontend E2E (requires :3000) ===" && \
+  npm run test:e2e && cd ..
 ```
 
 All suites should pass with zero failures before committing.

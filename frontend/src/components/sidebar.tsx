@@ -5,7 +5,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 
 const navItems = [
-  { label: "Chat", href: "/chat", icon: "💬" },
+  { label: "Chats", href: "/chats", icon: "💬" },
   { label: "Trips", href: "/trips", icon: "🗺️" },
   { label: "Memories", href: "/memories", icon: "🧠" },
   { label: "Settings", href: "/settings", icon: "⚙️" },
@@ -23,7 +23,6 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
     <Box
       as="nav"
       w={collapsed ? "16" : "72"}
-      minH="100vh"
       bg="bg.subtle"
       color="text.primary"
       py={10}
@@ -34,7 +33,10 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
       flexDirection="column"
       transition="width 0.22s cubic-bezier(0.4,0,0.2,1)"
       overflow="hidden"
-      position="relative"
+      position="sticky"
+      top={0}
+      h="100vh"
+      alignSelf="flex-start"
     >
       {/* Logo + toggle */}
       <Box mb={10} px={collapsed ? 0 : 6} display="flex" alignItems="center" justifyContent={collapsed ? "center" : "space-between"}>

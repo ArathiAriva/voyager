@@ -4,25 +4,15 @@ import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import {
   Box, Flex, HStack, VStack, Text, Badge, Button, Textarea, Input,
-  Spinner, Portal, Select, createListCollection,
+  Spinner,
 } from "@chakra-ui/react";
 import {
   fetchTrip, fetchJournalEntries, createJournalEntry, deleteJournalEntry,
-  fetchContent, addContent, deleteContent,
-  type Trip, type JournalEntry, type ConnectedContent,
+  fetchContent, addContent, deleteContent, updateTrip,
+  type Trip, type JournalEntry, type ConnectedContent, type TripUpdate,
 } from "@/lib/api";
 
 type Tab = "journal" | "content";
-
-const CONTENT_TYPE_OPTIONS = createListCollection({
-  items: [
-    { label: "Photo album", value: "album" },
-    { label: "Instagram", value: "instagram" },
-    { label: "TikTok", value: "tiktok" },
-    { label: "Blog", value: "blog" },
-    { label: "Other", value: "other" },
-  ],
-});
 
 export default function TripDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -34,6 +24,11 @@ export default function TripDetailPage() {
   const [tab, setTab] = useState<Tab>("journal");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  // Edit trip state
+  const [showEditForm, setShowEditForm] = useState(false);
+  const [editForm, setEditForm] = useState<TripUpdate>({});
+  const [saving, setSaving] = useState(false);
 
   // Journal form state
   const [showEntryForm, setShowEntryForm] = useState(false);
@@ -55,6 +50,33 @@ export default function TripDetailPage() {
       .catch(() => setError("Couldn't load trip. Is the backend running?"))
       .finally(() => setLoading(false));
   }, [id]);
+
+  function openEdit() {
+    if (!trip) return;
+    setEditForm({
+      destination: trip.destination,
+      dates: trip.dates,
+      status: trip.status,
+      emoji: trip.emoji,
+      summary: trip.summary,
+      tags: trip.tags ?? [],
+    });
+    setShowEditForm(true);
+  }
+
+  async function handleSaveEdit() {
+    if (!trip) return;
+    setSaving(true);
+    try {
+      const updated = await updateTrip(trip.id, editForm);
+      setTrip(updated);
+      setShowEditForm(false);
+    } catch {
+      setError("Failed to save changes.");
+    } finally {
+      setSaving(false);
+    }
+  }
 
   async function handleAddEntry() {
     if (!entryBody.trim()) return;
@@ -131,32 +153,126 @@ export default function TripDetailPage() {
   return (
     <Box p={8} maxW="860px">
       {/* Header */}
-      <HStack mb={2} gap={2}>
+      <HStack mb={2} gap={2} justify="space-between">
         <Button size="xs" variant="ghost" color="text.secondary" onClick={() => router.push("/trips")}>
           ← Trips
         </Button>
+        {!showEditForm && (
+          <Button size="xs" variant="ghost" color="text.secondary" onClick={openEdit}>
+            Edit
+          </Button>
+        )}
       </HStack>
 
-      <HStack mb={6} gap={4} align="start">
-        <Text fontSize="4xl">{trip.emoji}</Text>
-        <Box flex={1}>
-          <HStack gap={3} align="center">
-            <Text fontSize="2xl" fontWeight="bold">{trip.destination}</Text>
-            <Badge colorPalette={trip.status === "upcoming" ? "blue" : "gray"} borderRadius="full" px={2}>
-              {trip.status}
-            </Badge>
-          </HStack>
-          <Text fontSize="sm" color="text.secondary">{trip.dates}</Text>
-          {trip.summary && <Text fontSize="sm" color="text.secondary" mt={1}>{trip.summary}</Text>}
-          {trip.tags && trip.tags.length > 0 && (
-            <HStack mt={2} gap={1} flexWrap="wrap">
-              {trip.tags.map((tag) => (
-                <Badge key={tag} size="sm" variant="subtle" colorPalette="gray">{tag}</Badge>
-              ))}
+      {showEditForm ? (
+        <Box bg="bg.subtle" borderRadius="2xl" p={6} mb={6} border="1px solid" borderColor="border.default">
+          <Text fontSize="lg" fontWeight="bold" mb={5}>Edit trip</Text>
+          <VStack align="stretch" gap={4}>
+            {/* Emoji */}
+            <Box>
+              <Text fontSize="sm" fontWeight="medium" mb={2} color="text.secondary">Emoji</Text>
+              <HStack gap={2} flexWrap="wrap">
+                {["🧭","🏖️","🏔️","🗺️","🏯","🌮","🌊","🌍","🏕️","🚂","🛳️","🗼"].map((e) => (
+                  <Box
+                    key={e}
+                    fontSize="xl"
+                    cursor="pointer"
+                    p={1}
+                    borderRadius="md"
+                    bg={editForm.emoji === e ? "accent.activeBg" : "transparent"}
+                    border="2px solid"
+                    borderColor={editForm.emoji === e ? "accent.active" : "transparent"}
+                    onClick={() => setEditForm((f) => ({ ...f, emoji: e }))}
+                  >
+                    {e}
+                  </Box>
+                ))}
+              </HStack>
+            </Box>
+            <Box>
+              <Text fontSize="sm" fontWeight="medium" mb={1} color="text.secondary">Destination</Text>
+              <Input
+                value={editForm.destination ?? ""}
+                onChange={(e) => setEditForm((f) => ({ ...f, destination: e.target.value }))}
+              />
+            </Box>
+            <Box>
+              <Text fontSize="sm" fontWeight="medium" mb={1} color="text.secondary">Dates</Text>
+              <Input
+                value={editForm.dates ?? ""}
+                onChange={(e) => setEditForm((f) => ({ ...f, dates: e.target.value }))}
+              />
+            </Box>
+            <Box>
+              <Text fontSize="sm" fontWeight="medium" mb={2} color="text.secondary">Status</Text>
+              <HStack gap={3}>
+                {(["upcoming", "past"] as const).map((s) => (
+                  <Button
+                    key={s}
+                    size="sm"
+                    variant={editForm.status === s ? "solid" : "outline"}
+                    colorPalette={editForm.status === s ? "blue" : "gray"}
+                    onClick={() => setEditForm((f) => ({ ...f, status: s }))}
+                  >
+                    {s === "upcoming" ? "Upcoming" : "Past"}
+                  </Button>
+                ))}
+              </HStack>
+            </Box>
+            <Box>
+              <Text fontSize="sm" fontWeight="medium" mb={1} color="text.secondary">Summary</Text>
+              <Textarea
+                value={editForm.summary ?? ""}
+                onChange={(e) => setEditForm((f) => ({ ...f, summary: e.target.value }))}
+                rows={3}
+              />
+            </Box>
+            <Box>
+              <Text fontSize="sm" fontWeight="medium" mb={1} color="text.secondary">Tags (comma-separated)</Text>
+              <Input
+                value={(editForm.tags ?? []).join(", ")}
+                onChange={(e) => setEditForm((f) => ({
+                  ...f,
+                  tags: e.target.value.split(",").map((t) => t.trim()).filter(Boolean),
+                }))}
+                placeholder="e.g. solo, food, hiking"
+              />
+            </Box>
+            <HStack justify="flex-end" gap={3} pt={1}>
+              <Button variant="ghost" onClick={() => setShowEditForm(false)}>Cancel</Button>
+              <Button
+                colorPalette="blue"
+                loading={saving}
+                disabled={!editForm.destination?.trim() || !editForm.dates?.trim()}
+                onClick={handleSaveEdit}
+              >
+                Save changes
+              </Button>
             </HStack>
-          )}
+          </VStack>
         </Box>
-      </HStack>
+      ) : (
+        <HStack mb={6} gap={4} align="start">
+          <Text fontSize="4xl">{trip.emoji}</Text>
+          <Box flex={1}>
+            <HStack gap={3} align="center">
+              <Text fontSize="2xl" fontWeight="bold">{trip.destination}</Text>
+              <Badge colorPalette={trip.status === "upcoming" ? "blue" : "gray"} borderRadius="full" px={2}>
+                {trip.status}
+              </Badge>
+            </HStack>
+            <Text fontSize="sm" color="text.secondary">{trip.dates}</Text>
+            {trip.summary && <Text fontSize="sm" color="text.secondary" mt={1}>{trip.summary}</Text>}
+            {trip.tags && trip.tags.length > 0 && (
+              <HStack mt={2} gap={1} flexWrap="wrap">
+                {trip.tags.map((tag) => (
+                  <Badge key={tag} size="sm" variant="subtle" colorPalette="gray">{tag}</Badge>
+                ))}
+              </HStack>
+            )}
+          </Box>
+        </HStack>
+      )}
 
       {/* Tabs */}
       <HStack mb={6} borderBottom="2px solid" borderColor="border.default" gap={0}>
