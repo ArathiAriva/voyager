@@ -18,6 +18,7 @@ backend/profiles/.env.*
 frontend/node_modules/
 frontend/.next/
 frontend/.env.local
+frontend/test-results/
 
 # Claude Code — ignore everything except project skills
 .claude/*
