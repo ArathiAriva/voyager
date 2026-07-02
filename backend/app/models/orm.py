@@ -65,6 +65,7 @@ class SavedPlaceORM(Base):
     url: Mapped[str | None] = mapped_column(String, nullable=True)
     category: Mapped[str] = mapped_column(String, nullable=False, default="other")
     address: Mapped[str | None] = mapped_column(String, nullable=True)
+    area: Mapped[str | None] = mapped_column(String, nullable=True)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
     summary: Mapped[str | None] = mapped_column(Text, nullable=True)
     thumbnail_url: Mapped[str | None] = mapped_column(String, nullable=True)

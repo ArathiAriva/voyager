@@ -8,6 +8,8 @@ class ItineraryDay(BaseModel):
     date: str | None = None  # e.g. "2025-04-10"
     title: str = ""
     plan: str  # freeform markdown or prose for the day
+    area_focus: str | None = None  # primary neighbourhood/area for the day
+    accommodation: str | None = None  # where the user is staying this day
 
 
 class TripBase(BaseModel):
@@ -96,6 +98,7 @@ class SavedPlaceBase(BaseModel):
     name: str
     url: str | None = None
     category: PlaceCategory = "other"
+    area: str | None = None
     address: str | None = None
     notes: str | None = None
 
@@ -107,6 +110,7 @@ class SavedPlaceCreate(SavedPlaceBase):
 class SavedPlaceUpdate(BaseModel):
     name: str | None = None
     category: PlaceCategory | None = None
+    area: str | None = None
     address: str | None = None
     notes: str | None = None
 

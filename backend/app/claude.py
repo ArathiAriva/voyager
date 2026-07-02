@@ -19,3 +19,18 @@ def get_client() -> AsyncOpenAI:
 
 def get_model() -> str:
     return os.environ.get("OPENROUTER_MODEL", DEFAULT_MODEL)
+
+
+async def llm_call(
+    messages: list[dict],
+    *,
+    model: str | None = None,
+    tools: list[dict] | None = None,
+    tool_choice: str = "auto",
+) -> object:
+    """Thin wrapper around chat.completions.create with optional per-call model override."""
+    return await get_client().chat.completions.create(
+        model=model or get_model(),
+        messages=messages,
+        **({"tools": tools, "tool_choice": tool_choice} if tools else {}),
+    )

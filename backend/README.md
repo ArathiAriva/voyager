@@ -8,6 +8,7 @@ FastAPI backend for the Voyager AI travel companion.
 - **OpenRouter** (via `openai` SDK) for LLM access — model switchable via env var
 - **SQLite** with SQLAlchemy (async) and Alembic migrations
 - **Chroma** (local) for semantic memory and journal RAG
+- **LangGraph** for multi-agent trip planning orchestration
 - **MCP client** — connects to the Voyager MCP travel tools server for weather and exchange rates
 
 ## Project structure
@@ -15,17 +16,31 @@ FastAPI backend for the Voyager AI travel companion.
 ```
 backend/
 ├── app/
-│   ├── claude.py          # OpenRouter client singleton
+│   ├── claude.py          # OpenRouter client + llm_call() helper with per-call model override
 │   ├── db.py              # SQLAlchemy engine and session
 │   ├── main.py            # App factory, CORS, router registration, seed data
-│   ├── memory.py          # Chroma collections: episodic, semantic, journals
+│   ├── memory.py          # Chroma collections: episodic, semantic, journals, saved places
 │   ├── mcp_client.py      # MCP stdio client — fetches tool schemas and routes calls
-│   ├── tools.py           # Agent tools: get_trips, create_trip, update_trip, search_journal, search_memory
+│   ├── tools.py           # Agent tools: save_place, search_places, get_trips, set_itinerary, ...
 │   ├── models/            # Pydantic + ORM models
+│   ├── agents/            # Per-agent modules for the planning graph
+│   │   ├── __init__.py    # parse_json_response() — robust JSON extraction from LLM output
+│   │   ├── planner.py     # Orchestrator: classify intent, build brief, assemble reply
+│   │   ├── activities.py  # Attractions and experiences researcher
+│   │   ├── food.py        # Restaurants and cafes researcher
+│   │   ├── accommodation.py # Hotel researcher (runs after activities + food)
+│   │   ├── logistics.py   # Transport and timing researcher
+│   │   ├── optimizer.py   # Clusters researcher outputs into a day-by-day itinerary
+│   │   └── critic.py      # Scores itinerary draft; triggers revision loop if score < 4
+│   ├── planning/
+│   │   ├── state.py       # PlanningState TypedDict + RevisionScope
+│   │   ├── graph.py       # LangGraph StateGraph: nodes, edges, revision loop, place auto-save
+│   │   └── router.py      # is_planning_request() + run_planning_graph()
 │   └── routers/
-│       ├── conversations.py  # Persistent conversations + agentic loop
+│       ├── conversations.py  # Persistent conversations + agentic loop (planning branch + standard loop)
 │       ├── trips.py          # Trip CRUD
-│       ├── journal.py        # Journal entries (embeds into Chroma on save)
+│       ├── places.py         # Saved places CRUD + background enrichment
+│       ├── journal.py        # Journal entries (auto-embeds in Chroma on save)
 │       ├── content.py        # Connected content (photos, links)
 │       └── memories.py       # Read episodic + semantic memory
 ├── alembic/               # DB migrations
@@ -40,6 +55,7 @@ backend/
 │   ├── .env.lan
 │   └── .env.moiraine
 ├── scripts/
+│   ├── run.sh             # Start backend with a named profile (sets DB_PATH, CHROMA_PATH, loads .env)
 │   └── seed.py            # Seeds trips + journal entries for a profile via the API
 └── requirements.txt
 ```
@@ -69,12 +85,11 @@ Each profile is an isolated SQLite DB + Chroma instance representing a different
 ### Switching profiles
 
 ```bash
-cp profiles/.env.egwene .env
-# restart uvicorn
+bash scripts/run.sh --profile egwene
 ```
 
 Each profile stores its data in:
-- `data/{profile}.db` — SQLite (trips, journals, conversations)
+- `data/{profile}.db` — SQLite (trips, journals, conversations, saved places)
 - `chroma_{profile}/` — Chroma (episodic memory, semantic preferences, journal embeddings)
 
 ### Seeding a profile
@@ -90,13 +105,33 @@ This creates trips and journal entries via the API, which automatically triggers
 ## Running
 
 ```bash
-cp profiles/.env.egwene .env   # or whichever profile
-uvicorn app.main:app --reload
+bash scripts/run.sh --profile rand
 ```
 
 API at `http://localhost:8000`. Docs at `http://localhost:8000/docs`.
 
 The MCP server is launched automatically as a subprocess when the agent loop first receives a message — no separate startup required.
+
+## Planning graph
+
+When the backend receives a message that matches a planning phrase (`plan my`, `itinerary`, `days in`, etc.) it routes to the LangGraph multi-agent graph instead of the standard loop.
+
+```
+load_context → classify_intent
+  ├─ needs_info → clarify → END   (asks for destination/duration if missing)
+  └─ full_plan / revision
+       ├─ activities_researcher ─┐
+       ├─ food_researcher        ├─▶ accommodation_researcher → optimizer → critic
+       └─ logistics_researcher ──┘        │                                   │
+                                          │ score ≥ 4                score < 4 (max 2x)
+                                          ▼                                   ▼
+                                   assemble_reply ◀─────────── targeted_revision
+                                          │
+                                   persist_itinerary → END
+                                   (saves itinerary + auto-saves all recommended places)
+```
+
+Revision messages (`find cheaper restaurants`, `redo the accommodation`) re-run only the affected researchers via `RevisionScope`, not the full graph.
 
 ## Environment variables
 
@@ -104,8 +139,8 @@ The MCP server is launched automatically as a subprocess when the agent loop fir
 |----------|----------|---------|-------------|
 | `OPENROUTER_API_KEY` | Yes | — | OpenRouter API key |
 | `OPENROUTER_MODEL` | No | `anthropic/claude-haiku-4-5` | Any OpenRouter model string |
-| `DATABASE_URL` | No | `sqlite+aiosqlite:///./voyager.db` | SQLite path |
-| `CHROMA_PATH` | No | `./chroma_db` | Chroma persistence directory |
+| `DATABASE_URL` | No | `sqlite+aiosqlite:///./voyager.db` | SQLite path (set by run.sh) |
+| `CHROMA_PATH` | No | `./chroma_db` | Chroma persistence directory (set by run.sh) |
 
 ## Endpoints
 
@@ -123,10 +158,14 @@ The MCP server is launched automatically as a subprocess when the agent loop fir
 | GET | `/api/trips/{id}/content` | List connected content |
 | POST | `/api/trips/{id}/content` | Add connected content |
 | DELETE | `/api/trips/{id}/content/{cid}` | Remove connected content |
+| GET | `/api/trips/{id}/places` | List saved places |
+| POST | `/api/trips/{id}/places` | Save a place (triggers background enrichment if URL provided) |
+| PATCH | `/api/trips/{id}/places/{pid}` | Update saved place |
+| DELETE | `/api/trips/{id}/places/{pid}` | Delete saved place |
 | GET | `/api/conversations` | List conversations |
 | POST | `/api/conversations` | Create conversation |
 | GET | `/api/conversations/{id}` | Get conversation with messages |
-| POST | `/api/conversations/{id}/messages` | Send message (agentic loop) |
+| POST | `/api/conversations/{id}/messages` | Send message (planning graph or standard agent loop) |
 | DELETE | `/api/conversations/{id}` | Delete conversation |
 | GET | `/api/memories` | Read episodic + semantic memory |
 
@@ -158,3 +197,10 @@ async def main():
 asyncio.run(main())
 "
 ```
+
+**Planning graph returns a fallback message**
+
+Check backend logs for `voyager.planning` logger output. Common causes:
+- `critic_score` stuck at 2–3: the critic prompt has a "4 is the default pass" instruction; if it still fails, the graph exhausts 2 revision attempts and proceeds anyway
+- JSON parse failures from researchers: `parse_json_response` handles prose + fenced JSON; check for truly malformed output
+- `trip_id` not resolved: the planner calls `get_trips` to match the destination; if no trip exists for the destination, `persist_itinerary` is skipped but the reply still works

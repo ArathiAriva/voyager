@@ -14,6 +14,7 @@ from app.models.conversation import Conversation, ConversationSummary, SendMessa
 from app.claude import get_client, get_model
 from app.tools import TOOL_SCHEMAS, execute_tool
 from app.mcp_client import mcp_tool_schemas, call_mcp_tool
+from app.planning.router import is_planning_request, run_planning_graph
 from app import memory
 
 logger = logging.getLogger("voyager.conversations")
@@ -179,6 +180,29 @@ async def send_message(
     # Names served by MCP — used to route tool calls at execution time
     mcp_tool_names = {s["function"]["name"] for s in mcp_schemas}
     all_tools = TOOL_SCHEMAS + mcp_schemas
+
+    # ── Multi-agent planning path ─────────────────────────────────────────────
+    if is_planning_request(body.content):
+        logger.info("conv=%s | routing to planning graph", conversation_id[:8])
+        try:
+            planning_reply = await run_planning_graph(body.content, session)
+            reply_msg = MessageORM(
+                id=str(uuid.uuid4()),
+                conversation_id=conversation_id,
+                role="assistant",
+                content=planning_reply,
+                created_at=datetime.now(timezone.utc),
+            )
+            session.add(reply_msg)
+            conversation.updated_at = datetime.now(timezone.utc)
+            await session.commit()
+            await session.refresh(reply_msg)
+            asyncio.create_task(_extract_and_store_memory(conversation_id, history + [{"role": "assistant", "content": planning_reply}]))
+            from app.models.conversation import Message as MessageSchema
+            return MessageSchema(id=reply_msg.id, role=reply_msg.role, content=reply_msg.content, created_at=reply_msg.created_at, trip_action=None)
+        except Exception as e:
+            logger.exception("conv=%s | planning graph failed, falling back to standard loop: %s", conversation_id[:8], e)
+            # Fall through to standard loop on error
 
     client = get_client()
     iteration = 0

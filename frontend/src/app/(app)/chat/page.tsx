@@ -67,6 +67,7 @@ export default function ChatPage() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
+  const [loadingLabel, setLoadingLabel] = useState("Thinking…");
   const [loadingConversation, setLoadingConversation] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
 
@@ -121,6 +122,8 @@ export default function ChatPage() {
     setMessages((prev) => [...prev, optimisticUser]);
     setInput("");
     setLoading(true);
+    const isPlan = /plan (my|a|the)|itinerary|days in|week in|schedule (my|a)|organise|organize|build an itinerary/i.test(text);
+    setLoadingLabel(isPlan ? "Planning your trip… this takes a minute" : "Thinking…");
 
     try {
       const reply = await sendMessage(activeId, text);
@@ -338,7 +341,10 @@ export default function ChatPage() {
                 <Text fontSize="xs">🧭</Text>
               </Box>
               <Box bg="bubble.assistant" px={5} py={3.5} borderRadius="2xl" borderBottomLeftRadius="sm" boxShadow="0 2px 12px rgba(0,0,0,0.18)">
-                <Spinner size="sm" color="accent.active" />
+                <HStack gap={3}>
+                  <Spinner size="sm" color="accent.active" />
+                  <Text fontSize="sm" color="text.secondary">{loadingLabel}</Text>
+                </HStack>
               </Box>
             </Flex>
           )}

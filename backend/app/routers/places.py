@@ -28,6 +28,7 @@ extract structured information and respond with JSON only — no prose, no code 
 {
   "name": "Official name of the place",
   "address": "Full street address if present, else null",
+  "area": "Neighbourhood or district name (e.g. 'Shinjuku', 'Le Marais', 'Shoreditch'). Infer from address or context if not explicit. Null if unknown.",
   "category": "One of: restaurant, cafe, bar, hotel, neighbourhood, attraction, shop, beach, other",
   "summary": "2-3 sentences describing what makes this place worth visiting. Focus on atmosphere, specialities, and practical details a traveller would want."
 }
@@ -92,6 +93,8 @@ async def _enrich_place(place_id: str, url: str, destination: str) -> None:
                 place.name = extracted["name"]
             if extracted.get("address") and not place.address:
                 place.address = extracted["address"]
+            if extracted.get("area") and not place.area:
+                place.area = extracted["area"]
             if extracted.get("category"):
                 place.category = extracted["category"]
             if extracted.get("summary"):
@@ -152,6 +155,7 @@ async def create_place(
         name=body.name,
         url=body.url,
         category=body.category,
+        area=body.area,
         address=body.address,
         notes=body.notes,
         thumbnail_url=thumbnail_url,

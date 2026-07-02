@@ -35,6 +35,8 @@ export interface ItineraryDay {
   date?: string | null;
   title?: string;
   plan: string;
+  area_focus?: string | null;
+  accommodation?: string | null;
 }
 
 export interface Trip {
@@ -101,13 +103,20 @@ export async function fetchConversation(id: string): Promise<Conversation> {
 }
 
 export async function sendMessage(conversationId: string, content: string): Promise<Message> {
-  const res = await fetch(`${BASE_URL}/api/conversations/${conversationId}/messages`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ content }),
-  });
-  if (!res.ok) throw new Error(`Send message error: ${res.status}`);
-  return res.json() as Promise<Message>;
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 180_000); // 3 min — planning graph can take ~2 min
+  try {
+    const res = await fetch(`${BASE_URL}/api/conversations/${conversationId}/messages`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ content }),
+      signal: controller.signal,
+    });
+    if (!res.ok) throw new Error(`Send message error: ${res.status}`);
+    return res.json() as Promise<Message>;
+  } finally {
+    clearTimeout(timeout);
+  }
 }
 
 export async function deleteConversation(id: string): Promise<void> {
@@ -217,6 +226,7 @@ export interface SavedPlace {
   name: string;
   url?: string | null;
   category: PlaceCategory;
+  area?: string | null;
   address?: string | null;
   notes?: string | null;
   summary?: string | null;
@@ -229,6 +239,7 @@ export interface SavedPlaceCreate {
   name: string;
   url?: string;
   category?: PlaceCategory;
+  area?: string;
   address?: string;
   notes?: string;
 }

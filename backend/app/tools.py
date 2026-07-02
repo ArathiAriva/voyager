@@ -171,6 +171,7 @@ TOOL_SCHEMAS = [
                         "type": "string",
                         "enum": ["restaurant", "cafe", "bar", "hotel", "neighbourhood", "attraction", "shop", "beach", "other"],
                     },
+                    "area": {"type": "string", "description": "Neighbourhood or district name (e.g. 'Shinjuku', 'Le Marais'). Used for clustering places geographically."},
                     "address": {"type": "string", "description": "Street address if known."},
                     "notes": {"type": "string", "description": "Why this place is interesting or worth visiting."},
                 },
@@ -230,6 +231,8 @@ TOOL_SCHEMAS = [
                                 "date": {"type": "string", "description": "Date in YYYY-MM-DD format, if known."},
                                 "title": {"type": "string", "description": "Short title for the day, e.g. 'Arrival & Arashiyama'."},
                                 "plan": {"type": "string", "description": "Activities, places, logistics, and tips for this day."},
+                                "area_focus": {"type": "string", "description": "Primary neighbourhood or district for this day, e.g. 'Arashiyama'. Used by the optimizer to cluster nearby food/places."},
+                                "accommodation": {"type": "string", "description": "Where the user is staying this night, e.g. 'The Screen Kyoto, Nakagyo'."},
                             },
                             "required": ["day", "plan"],
                         },
@@ -333,8 +336,9 @@ async def _execute_save_place(args: dict, session: AsyncSession) -> str:
         return json.dumps({"error": f"Trip {trip_id} not found."})
 
     url = args.get("url")
+    is_maps_url = url and "maps.google.com" in url
     thumbnail_url: str | None = None
-    if url:
+    if url and not is_maps_url:
         _, thumbnail_url = await fetch_og_metadata(url)
 
     place = SavedPlaceORM(
@@ -343,10 +347,11 @@ async def _execute_save_place(args: dict, session: AsyncSession) -> str:
         name=args["name"],
         url=url,
         category=args.get("category", "other"),
+        area=args.get("area"),
         address=args.get("address"),
         notes=args.get("notes"),
         thumbnail_url=thumbnail_url,
-        enrichment_status="pending" if url else "none",
+        enrichment_status="none" if (not url or is_maps_url) else "pending",
         created_at=datetime.now(timezone.utc),
     )
     session.add(place)
@@ -356,7 +361,7 @@ async def _execute_save_place(args: dict, session: AsyncSession) -> str:
     embed_text = place.notes or place.name
     memory.store_saved_place(place.id, trip_id, trip.destination, place.name, place.category, embed_text)
 
-    if place.url:
+    if place.url and not is_maps_url:
         asyncio.create_task(_enrich_place(place.id, place.url, trip.destination))
 
     logger.info("Tool save_place: saved place=%s (%s) for trip=%s", place.id[:8], place.name, trip_id[:8])
@@ -440,6 +445,19 @@ TOOL_EXECUTORS = {
     "search_journal": _execute_search_journal,
     "search_memory": _execute_search_memory,
 }
+
+
+def tool_by_name(name: str) -> dict:
+    """Return the tool schema for a given tool name. Raises KeyError if not found."""
+    for t in TOOL_SCHEMAS:
+        if t["function"]["name"] == name:
+            return t
+    raise KeyError(f"Tool not found: {name}")
+
+
+def tools_named(*names: str) -> list[dict]:
+    """Return a subset of TOOL_SCHEMAS matching the given names, preserving order."""
+    return [tool_by_name(n) for n in names]
 
 
 async def execute_tool(name: str, args: dict, session: AsyncSession) -> str:
