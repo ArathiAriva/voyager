@@ -1,4 +1,4 @@
-const BASE_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+const BASE_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8060";
 
 export type Role = "user" | "assistant";
 
@@ -102,20 +102,49 @@ export async function fetchConversation(id: string): Promise<Conversation> {
   return res.json() as Promise<Conversation>;
 }
 
-export async function sendMessage(conversationId: string, content: string): Promise<Message> {
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 180_000); // 3 min — planning graph can take ~2 min
-  try {
-    const res = await fetch(`${BASE_URL}/api/conversations/${conversationId}/messages`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ content }),
-      signal: controller.signal,
-    });
-    if (!res.ok) throw new Error(`Send message error: ${res.status}`);
-    return res.json() as Promise<Message>;
-  } finally {
-    clearTimeout(timeout);
+export type StreamEvent =
+  | { event: "step"; data: { label: string } }
+  | { event: "done"; data: Message }
+  | { event: "error"; data: { detail: string } };
+
+export async function* streamMessage(
+  conversationId: string,
+  content: string,
+  signal?: AbortSignal,
+): AsyncGenerator<StreamEvent> {
+  const res = await fetch(`${BASE_URL}/api/conversations/${conversationId}/messages`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ content }),
+    signal,
+  });
+  if (!res.ok) throw new Error(`Send message error: ${res.status}`);
+  if (!res.body) throw new Error("No response body");
+
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+
+    const chunks = buffer.split("\n\n");
+    buffer = chunks.pop() ?? "";
+
+    for (const chunk of chunks) {
+      const lines = chunk.split("\n");
+      let event = "";
+      let dataStr = "";
+      for (const line of lines) {
+        if (line.startsWith("event: ")) event = line.slice(7).trim();
+        if (line.startsWith("data: ")) dataStr = line.slice(6).trim();
+      }
+      if (!event || !dataStr) continue;
+      const data = JSON.parse(dataStr);
+      yield { event, data } as StreamEvent;
+    }
   }
 }
 

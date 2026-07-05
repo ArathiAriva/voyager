@@ -2,8 +2,10 @@ import asyncio
 import json
 import logging
 import uuid
+from collections.abc import AsyncGenerator
 from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import StreamingResponse
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -132,12 +134,16 @@ async def get_conversation(conversation_id: str, session: AsyncSession = Depends
     return conversation
 
 
-@router.post("/{conversation_id}/messages", response_model=Message)
+def _sse(event: str, data: dict) -> str:
+    return f"event: {event}\ndata: {json.dumps(data)}\n\n"
+
+
+@router.post("/{conversation_id}/messages")
 async def send_message(
     conversation_id: str,
     body: SendMessageRequest,
     session: AsyncSession = Depends(get_session),
-) -> Message:
+) -> StreamingResponse:
     result = await session.execute(
         select(ConversationORM)
         .where(ConversationORM.id == conversation_id)
@@ -158,7 +164,6 @@ async def send_message(
     )
     session.add(user_msg)
 
-    # Auto-title after the first user message
     if not conversation.messages:
         conversation.title = body.content[:60] + ("…" if len(body.content) > 60 else "")
 
@@ -171,137 +176,191 @@ async def send_message(
         conversation_id[:8], len(body.content), len(history), model,
     )
 
-    try:
-        mcp_schemas = await mcp_tool_schemas()
-    except Exception as e:
-        logger.warning("conv=%s | MCP server unavailable, continuing without MCP tools: %s", conversation_id[:8], e)
-        mcp_schemas = []
+    async def generate() -> AsyncGenerator[str, None]:
+        # Persist the user message before doing any async LLM work
+        await session.commit()
 
-    # Names served by MCP — used to route tool calls at execution time
-    mcp_tool_names = {s["function"]["name"] for s in mcp_schemas}
-    all_tools = TOOL_SCHEMAS + mcp_schemas
-
-    # ── Multi-agent planning path ─────────────────────────────────────────────
-    if is_planning_request(body.content):
-        logger.info("conv=%s | routing to planning graph", conversation_id[:8])
         try:
-            planning_reply = await run_planning_graph(body.content, session)
-            reply_msg = MessageORM(
-                id=str(uuid.uuid4()),
-                conversation_id=conversation_id,
-                role="assistant",
-                content=planning_reply,
-                created_at=datetime.now(timezone.utc),
-            )
-            session.add(reply_msg)
-            conversation.updated_at = datetime.now(timezone.utc)
-            await session.commit()
-            await session.refresh(reply_msg)
-            asyncio.create_task(_extract_and_store_memory(conversation_id, history + [{"role": "assistant", "content": planning_reply}]))
-            from app.models.conversation import Message as MessageSchema
-            return MessageSchema(id=reply_msg.id, role=reply_msg.role, content=reply_msg.content, created_at=reply_msg.created_at, trip_action=None)
+            mcp_schemas = await mcp_tool_schemas()
         except Exception as e:
-            logger.exception("conv=%s | planning graph failed, falling back to standard loop: %s", conversation_id[:8], e)
-            # Fall through to standard loop on error
+            logger.warning("conv=%s | MCP server unavailable: %s", conversation_id[:8], e)
+            mcp_schemas = []
 
-    client = get_client()
-    iteration = 0
-    trip_action: dict | None = None  # set if create_trip / update_trip fires
-    # Agentic tool-call loop: keep going until the model returns a plain text reply
-    try:
-        while True:
-            iteration += 1
-            logger.debug("conv=%s | LLM call #%d", conversation_id[:8], iteration)
+        mcp_tool_names = {s["function"]["name"] for s in mcp_schemas}
+        all_tools = TOOL_SCHEMAS + mcp_schemas
 
-            response = await client.chat.completions.create(
-                model=model,
-                messages=[{"role": "system", "content": SYSTEM_PROMPT}] + history,
-                tools=all_tools,
-                tool_choice="auto",
-            )
-            msg = response.choices[0].message
-            usage = response.usage
+        # ── Multi-agent planning path ─────────────────────────────────────────
+        if is_planning_request(body.content):
+            logger.info("conv=%s | routing to planning graph", conversation_id[:8])
 
-            # No tool calls — we have the final reply
-            if not msg.tool_calls:
-                logger.info(
-                    "conv=%s | final reply after %d LLM call(s) | tokens: %d in / %d out",
-                    conversation_id[:8], iteration,
-                    usage.prompt_tokens if usage else 0,
-                    usage.completion_tokens if usage else 0,
+            step_queue: asyncio.Queue[str | None] = asyncio.Queue()
+
+            async def enqueue_step(label: str) -> None:
+                await step_queue.put(label)
+
+            async def run_graph() -> str:
+                try:
+                    return await run_planning_graph(
+                        body.content, session, emit_step=enqueue_step
+                    )
+                finally:
+                    await step_queue.put(None)  # sentinel
+
+            yield _sse("step", {"label": "Starting trip planning…"})
+
+            graph_task = asyncio.create_task(run_graph())
+
+            # Drain step events while the graph runs
+            while True:
+                label = await step_queue.get()
+                if label is None:
+                    break
+                yield _sse("step", {"label": label})
+
+            try:
+                planning_reply = await graph_task
+            except Exception as e:
+                logger.exception("conv=%s | planning graph failed, falling back to standard loop: %s", conversation_id[:8], e)
+                planning_reply = None
+
+            if planning_reply is not None:
+                reply_msg = MessageORM(
+                    id=str(uuid.uuid4()),
+                    conversation_id=conversation_id,
+                    role="assistant",
+                    content=planning_reply,
+                    created_at=datetime.now(timezone.utc),
                 )
-                break
+                session.add(reply_msg)
+                conversation.updated_at = datetime.now(timezone.utc)
+                await session.commit()
+                await session.refresh(reply_msg)
+                asyncio.create_task(_extract_and_store_memory(
+                    conversation_id, history + [{"role": "assistant", "content": planning_reply}]
+                ))
+                from app.models.conversation import Message as MessageSchema
+                msg_out = MessageSchema(
+                    id=reply_msg.id, role=reply_msg.role,
+                    content=reply_msg.content, created_at=reply_msg.created_at,
+                    trip_action=None,
+                )
+                yield _sse("done", msg_out.model_dump(mode="json"))
+                return
 
-            tool_names = [tc.function.name for tc in msg.tool_calls]
-            logger.info(
-                "conv=%s | LLM call #%d → tool calls: %s",
-                conversation_id[:8], iteration, tool_names,
-            )
+        # ── Standard agentic tool-call loop ──────────────────────────────────
+        yield _sse("step", {"label": "Thinking…"})
 
-            # Append the assistant's tool-call turn to history
-            history.append({
-                "role": "assistant",
-                "content": msg.content or "",
-                "tool_calls": [
-                    {
-                        "id": tc.id,
-                        "type": "function",
-                        "function": {"name": tc.function.name, "arguments": tc.function.arguments},
-                    }
-                    for tc in msg.tool_calls
-                ],
-            })
+        client = get_client()
+        iteration = 0
+        trip_action: dict | None = None
+        msg = None
 
-            # Execute each tool and append results
-            for tc in msg.tool_calls:
-                args = json.loads(tc.function.arguments or "{}")
-                if tc.function.name in mcp_tool_names:
-                    result = await call_mcp_tool(tc.function.name, args)
-                else:
-                    result = await execute_tool(tc.function.name, args, session)
-                # Capture trip create/update actions for the frontend
-                if tc.function.name in ("create_trip", "update_trip"):
-                    try:
-                        parsed = json.loads(result)
-                        if "action" in parsed:
-                            trip_action = parsed
-                    except Exception:
-                        pass
+        try:
+            while True:
+                iteration += 1
+                logger.debug("conv=%s | LLM call #%d", conversation_id[:8], iteration)
+
+                response = await client.chat.completions.create(
+                    model=model,
+                    messages=[{"role": "system", "content": SYSTEM_PROMPT}] + history,
+                    tools=all_tools,
+                    tool_choice="auto",
+                )
+                msg = response.choices[0].message
+                usage = response.usage
+
+                if not msg.tool_calls:
+                    logger.info(
+                        "conv=%s | final reply after %d LLM call(s) | tokens: %d in / %d out",
+                        conversation_id[:8], iteration,
+                        usage.prompt_tokens if usage else 0,
+                        usage.completion_tokens if usage else 0,
+                    )
+                    break
+
+                tool_names = [tc.function.name for tc in msg.tool_calls]
+                logger.info("conv=%s | LLM call #%d → tool calls: %s", conversation_id[:8], iteration, tool_names)
+
+                # Emit a step label for the tool(s) being called
+                readable = {
+                    "get_trips": "Looking up your trips…",
+                    "get_weather": "Fetching weather forecast…",
+                    "search_memory": "Searching your travel memory…",
+                    "search_journal": "Reading your travel journal…",
+                    "search_places": "Looking up saved places…",
+                    "save_place": "Saving place…",
+                    "create_trip": "Creating trip…",
+                    "update_trip": "Updating trip…",
+                }
+                labels = list(dict.fromkeys(
+                    readable.get(n, f"Using {n}…") for n in tool_names
+                ))
+                for label in labels:
+                    yield _sse("step", {"label": label})
+
                 history.append({
-                    "role": "tool",
-                    "tool_call_id": tc.id,
-                    "content": result,
+                    "role": "assistant",
+                    "content": msg.content or "",
+                    "tool_calls": [
+                        {
+                            "id": tc.id,
+                            "type": "function",
+                            "function": {"name": tc.function.name, "arguments": tc.function.arguments},
+                        }
+                        for tc in msg.tool_calls
+                    ],
                 })
 
-    except Exception as e:
-        logger.exception("conv=%s | LLM error: %s", conversation_id[:8], e)
-        raise HTTPException(status_code=502, detail=str(e))
+                for tc in msg.tool_calls:
+                    args = json.loads(tc.function.arguments or "{}")
+                    if tc.function.name in mcp_tool_names:
+                        tool_result = await call_mcp_tool(tc.function.name, args)
+                    else:
+                        tool_result = await execute_tool(tc.function.name, args, session)
+                    if tc.function.name in ("create_trip", "update_trip"):
+                        try:
+                            parsed = json.loads(tool_result)
+                            if "action" in parsed:
+                                trip_action = parsed
+                        except Exception:
+                            pass
+                    history.append({
+                        "role": "tool",
+                        "tool_call_id": tc.id,
+                        "content": tool_result,
+                    })
 
-    reply_content = msg.content or ""
-    reply_msg = MessageORM(
-        id=str(uuid.uuid4()),
-        conversation_id=conversation_id,
-        role="assistant",
-        content=reply_content,
-        created_at=datetime.now(timezone.utc),
-    )
-    session.add(reply_msg)
+        except Exception as e:
+            logger.exception("conv=%s | LLM error: %s", conversation_id[:8], e)
+            yield _sse("error", {"detail": str(e)})
+            return
 
-    conversation.updated_at = datetime.now(timezone.utc)
-    await session.commit()
-    await session.refresh(reply_msg)
+        reply_content = msg.content or "" if msg else ""
+        reply_msg = MessageORM(
+            id=str(uuid.uuid4()),
+            conversation_id=conversation_id,
+            role="assistant",
+            content=reply_content,
+            created_at=datetime.now(timezone.utc),
+        )
+        session.add(reply_msg)
+        conversation.updated_at = datetime.now(timezone.utc)
+        await session.commit()
+        await session.refresh(reply_msg)
 
-    # Extract memories in the background — non-blocking, failures are logged not raised
-    asyncio.create_task(_extract_and_store_memory(conversation_id, history))
+        asyncio.create_task(_extract_and_store_memory(conversation_id, history))
 
-    from app.models.conversation import Message as MessageSchema
-    return MessageSchema(
-        id=reply_msg.id,
-        role=reply_msg.role,
-        content=reply_msg.content,
-        created_at=reply_msg.created_at,
-        trip_action=trip_action,
-    )
+        from app.models.conversation import Message as MessageSchema
+        msg_out = MessageSchema(
+            id=reply_msg.id,
+            role=reply_msg.role,
+            content=reply_msg.content,
+            created_at=reply_msg.created_at,
+            trip_action=trip_action,
+        )
+        yield _sse("done", msg_out.model_dump(mode="json"))
+
+    return StreamingResponse(generate(), media_type="text/event-stream")
 
 
 @router.delete("/{conversation_id}", status_code=204)

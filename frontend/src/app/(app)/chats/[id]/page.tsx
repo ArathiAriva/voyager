@@ -6,7 +6,7 @@ import { useRouter, useParams } from "next/navigation";
 import ReactMarkdown from "react-markdown";
 import {
   fetchConversation,
-  sendMessage,
+  streamMessage,
   deleteConversation,
   type Message,
   type Trip,
@@ -67,6 +67,7 @@ export default function ChatConversationPage() {
   const [title, setTitle] = useState("Chat");
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
+  const [steps, setSteps] = useState<string[]>([]);
   const [loadingConversation, setLoadingConversation] = useState(true);
   const [deleting, setDeleting] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -115,14 +116,22 @@ export default function ChatConversationPage() {
     setMessages((prev) => [...prev, optimisticUser]);
     setInput("");
     setLoading(true);
+    setSteps([]);
 
     if (messages.length === 0) {
       setTitle(text.slice(0, 60) + (text.length > 60 ? "…" : ""));
     }
 
     try {
-      const reply = await sendMessage(id, text);
-      setMessages((prev) => [...prev, reply]);
+      for await (const event of streamMessage(id, text)) {
+        if (event.event === "step") {
+          setSteps((prev) => [...prev, event.data.label]);
+        } else if (event.event === "done") {
+          setMessages((prev) => [...prev, event.data]);
+        } else if (event.event === "error") {
+          throw new Error(event.data.detail);
+        }
+      }
     } catch {
       setMessages((prev) => [
         ...prev,
@@ -135,6 +144,7 @@ export default function ChatConversationPage() {
       ]);
     } finally {
       setLoading(false);
+      setSteps([]);
     }
   }
 
@@ -273,8 +283,21 @@ export default function ChatConversationPage() {
             >
               <Text fontSize="xs">🧭</Text>
             </Box>
-            <Box bg="bubble.assistant" px={5} py={3.5} borderRadius="2xl" borderBottomLeftRadius="sm" boxShadow="0 2px 12px rgba(0,0,0,0.18)">
-              <Spinner size="sm" color="accent.active" />
+            <Box bg="bubble.assistant" px={5} py={3.5} borderRadius="2xl" borderBottomLeftRadius="sm" boxShadow="0 2px 12px rgba(0,0,0,0.18)" minW="200px">
+              <VStack align="stretch" gap={1.5}>
+                {steps.slice(0, -1).map((label, i) => (
+                  <HStack key={i} gap={2}>
+                    <Text fontSize="xs" color="accent.active" flexShrink={0}>✓</Text>
+                    <Text fontSize="sm" color="text.secondary" opacity={0.6}>{label}</Text>
+                  </HStack>
+                ))}
+                <HStack gap={2}>
+                  <Spinner size="xs" color="accent.active" flexShrink={0} />
+                  <Text fontSize="sm" color="text.secondary">
+                    {steps.length > 0 ? steps[steps.length - 1] : "Thinking…"}
+                  </Text>
+                </HStack>
+              </VStack>
             </Box>
           </Flex>
         )}

@@ -100,7 +100,7 @@ Or use the profile script (recommended — handles per-profile DB and env):
 bash scripts/run.sh --profile rand
 ```
 
-API available at `http://localhost:8000`. Interactive docs at `http://localhost:8000/docs`.
+API available at `http://localhost:8060`. Interactive docs at `http://localhost:8060/docs`.
 
 ### Environment variables
 

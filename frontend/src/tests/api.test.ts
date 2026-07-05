@@ -3,7 +3,6 @@ import {
   fetchConversations,
   createConversation,
   fetchConversation,
-  sendMessage,
   deleteConversation,
   fetchTrips,
 } from "../lib/api";
@@ -90,22 +89,6 @@ describe("fetchConversation", () => {
   it("throws on 404", async () => {
     mockFetch(null, false, 404);
     await expect(fetchConversation("missing")).rejects.toThrow("Conversation API error: 404");
-  });
-});
-
-// ── sendMessage ───────────────────────────────────────────────────────────────
-
-describe("sendMessage", () => {
-  it("returns assistant message on success", async () => {
-    mockFetch(mockMessage);
-    const result = await sendMessage("conv-1", "Hello");
-    expect(result.role).toBe("assistant");
-    expect(result.content).toBe("Hello!");
-  });
-
-  it("throws on non-ok response", async () => {
-    mockFetch(null, false, 502);
-    await expect(sendMessage("conv-1", "Hello")).rejects.toThrow("Send message error: 502");
   });
 });
 

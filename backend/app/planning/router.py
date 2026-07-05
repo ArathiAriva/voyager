@@ -3,6 +3,8 @@ Planning graph router — detects planning intent and invokes the LangGraph grap
 """
 
 import logging
+from collections.abc import Callable, Coroutine
+from typing import Any
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.planning.graph import planning_graph
@@ -25,6 +27,8 @@ _REVISION_PHRASES = (
     "swap the", "replace the",
 )
 
+StepEmitter = Callable[[str], Coroutine[Any, Any, None]]
+
 
 def is_planning_request(text: str) -> bool:
     lower = text.lower()
@@ -35,6 +39,7 @@ async def run_planning_graph(
     user_message: str,
     session: AsyncSession,
     trip_id: str | None = None,
+    emit_step: StepEmitter | None = None,
 ) -> str:
     """Invoke the planning graph and return the final reply string."""
     initial_state: PlanningState = {
@@ -62,11 +67,9 @@ async def run_planning_graph(
 
     logger.info("planning | starting graph for message: %s", user_message[:80])
 
-    # LangGraph nodes need access to the DB session. We pass it via config.
-    # Each node receives it via the second positional argument (injected by the graph).
     final_state = await planning_graph.ainvoke(
         initial_state,
-        config={"configurable": {"session": session}},
+        config={"configurable": {"session": session, "emit_step": emit_step}},
     )
 
     reply = final_state.get("final_reply", "")

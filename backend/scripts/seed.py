@@ -22,7 +22,7 @@ from dotenv import load_dotenv
 load_dotenv(override=True)
 from openai import AsyncOpenAI
 
-BASE_URL = "http://localhost:8000"
+BASE_URL = "http://localhost:8060"
 
 # ── Persona definitions ───────────────────────────────────────────────────────
 # These drive LLM generation — no trip data is hardcoded here.

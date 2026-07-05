@@ -33,9 +33,16 @@ def _session(config: RunnableConfig) -> AsyncSession:
     return config["configurable"]["session"]
 
 
+async def _emit(config: RunnableConfig, label: str) -> None:
+    emit = config["configurable"].get("emit_step")
+    if emit:
+        await emit(label)
+
+
 # ── Node functions ────────────────────────────────────────────────────────────
 
 async def node_load_context(state: PlanningState, config: RunnableConfig) -> dict:
+    await _emit(config, "Loading your travel profile…")
     ctx = await planner.load_user_context(state["user_message"], _session(config))
     return {
         "user_preferences": ctx["preferences"],
@@ -45,6 +52,7 @@ async def node_load_context(state: PlanningState, config: RunnableConfig) -> dic
 
 
 async def node_classify_intent(state: PlanningState, config: RunnableConfig) -> dict:
+    await _emit(config, "Understanding your request…")
     session = _session(config)
     result = await planner.classify_intent(state["user_message"])
     intent = result.get("intent", "not_planning")
@@ -101,30 +109,37 @@ async def node_clarify(state: PlanningState, config: RunnableConfig) -> dict:
 
 
 async def node_activities(state: PlanningState, config: RunnableConfig) -> dict:
+    await _emit(config, "Researching activities…")
     return await activities.run(state, _session(config))
 
 
 async def node_food(state: PlanningState, config: RunnableConfig) -> dict:
+    await _emit(config, "Researching food & restaurants…")
     return await food.run(state, _session(config))
 
 
 async def node_logistics(state: PlanningState, config: RunnableConfig) -> dict:
+    await _emit(config, "Checking transport & logistics…")
     return await logistics.run(state, _session(config))
 
 
 async def node_accommodation(state: PlanningState, config: RunnableConfig) -> dict:
+    await _emit(config, "Finding accommodation options…")
     return await accommodation.run(state, _session(config))
 
 
 async def node_optimizer(state: PlanningState, config: RunnableConfig) -> dict:
+    await _emit(config, "Building your day-by-day itinerary…")
     return await optimizer.run(state, _session(config))
 
 
 async def node_critic(state: PlanningState, config: RunnableConfig) -> dict:
+    await _emit(config, "Reviewing itinerary quality…")
     return await critic.run(state, _session(config))
 
 
 async def node_assemble_reply(state: PlanningState, config: RunnableConfig) -> dict:
+    await _emit(config, "Assembling your itinerary…")
     reply = await planner.assemble_reply(
         state.get("brief", {}),
         state.get("itinerary_draft", []),

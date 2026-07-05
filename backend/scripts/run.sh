@@ -14,7 +14,7 @@ usage() {
 }
 
 PROFILE=""
-PORT=8000
+PORT=8060
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --profile|-p)

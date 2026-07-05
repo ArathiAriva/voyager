@@ -77,4 +77,3 @@ Set in `.env.local` (already gitignored).
 | 6 | Auth (Clerk or Auth.js), production deploy to Vercel |
 
 Auth is not wired up yet — don't add auth middleware or protected routes until Month 6.
-

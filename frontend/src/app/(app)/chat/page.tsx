@@ -8,7 +8,7 @@ import {
   fetchConversations,
   fetchConversation,
   createConversation,
-  sendMessage,
+  streamMessage,
   deleteConversation,
   type ConversationSummary,
   type Message,
@@ -67,7 +67,7 @@ export default function ChatPage() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
-  const [loadingLabel, setLoadingLabel] = useState("Thinking…");
+  const [steps, setSteps] = useState<string[]>([]);
   const [loadingConversation, setLoadingConversation] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
 
@@ -77,7 +77,7 @@ export default function ChatPage() {
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages, loading]);
+  }, [messages, loading, steps]);
 
   const openConversation = useCallback(async (id: string) => {
     setActiveId(id);
@@ -122,18 +122,26 @@ export default function ChatPage() {
     setMessages((prev) => [...prev, optimisticUser]);
     setInput("");
     setLoading(true);
-    const isPlan = /plan (my|a|the)|itinerary|days in|week in|schedule (my|a)|organise|organize|build an itinerary/i.test(text);
-    setLoadingLabel(isPlan ? "Planning your trip… this takes a minute" : "Thinking…");
+    setSteps([]);
 
+    const conversationId = activeId;
     try {
-      const reply = await sendMessage(activeId, text);
-      setMessages((prev) => [...prev, reply]);
-      // Update title in sidebar (auto-titled after first message)
-      setConversations((prev) =>
-        prev.map((c) =>
-          c.id === activeId ? { ...c, title: text.slice(0, 60) + (text.length > 60 ? "…" : ""), updated_at: new Date().toISOString() } : c
-        )
-      );
+      for await (const event of streamMessage(conversationId, text)) {
+        if (event.event === "step") {
+          setSteps((prev) => [...prev, event.data.label]);
+        } else if (event.event === "done") {
+          setMessages((prev) => [...prev, event.data]);
+          setConversations((prev) =>
+            prev.map((c) =>
+              c.id === conversationId
+                ? { ...c, title: text.slice(0, 60) + (text.length > 60 ? "…" : ""), updated_at: new Date().toISOString() }
+                : c
+            )
+          );
+        } else if (event.event === "error") {
+          throw new Error(event.data.detail);
+        }
+      }
     } catch {
       setMessages((prev) => [
         ...prev,
@@ -146,6 +154,7 @@ export default function ChatPage() {
       ]);
     } finally {
       setLoading(false);
+      setSteps([]);
     }
   }
 
@@ -340,11 +349,21 @@ export default function ChatPage() {
               >
                 <Text fontSize="xs">🧭</Text>
               </Box>
-              <Box bg="bubble.assistant" px={5} py={3.5} borderRadius="2xl" borderBottomLeftRadius="sm" boxShadow="0 2px 12px rgba(0,0,0,0.18)">
-                <HStack gap={3}>
-                  <Spinner size="sm" color="accent.active" />
-                  <Text fontSize="sm" color="text.secondary">{loadingLabel}</Text>
-                </HStack>
+              <Box bg="bubble.assistant" px={5} py={3.5} borderRadius="2xl" borderBottomLeftRadius="sm" boxShadow="0 2px 12px rgba(0,0,0,0.18)" minW="200px">
+                <VStack align="stretch" gap={1.5}>
+                  {steps.slice(0, -1).map((label, i) => (
+                    <HStack key={i} gap={2}>
+                      <Text fontSize="xs" color="accent.active" flexShrink={0}>✓</Text>
+                      <Text fontSize="sm" color="text.secondary" opacity={0.6}>{label}</Text>
+                    </HStack>
+                  ))}
+                  <HStack gap={2}>
+                    <Spinner size="xs" color="accent.active" flexShrink={0} />
+                    <Text fontSize="sm" color="text.secondary">
+                      {steps.length > 0 ? steps[steps.length - 1] : "Thinking…"}
+                    </Text>
+                  </HStack>
+                </VStack>
               </Box>
             </Flex>
           )}

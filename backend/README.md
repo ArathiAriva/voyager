@@ -108,7 +108,7 @@ This creates trips and journal entries via the API, which automatically triggers
 bash scripts/run.sh --profile rand
 ```
 
-API at `http://localhost:8000`. Docs at `http://localhost:8000/docs`.
+API at `http://localhost:8060`. Docs at `http://localhost:8060/docs`.
 
 The MCP server is launched automatically as a subprocess when the agent loop first receives a message — no separate startup required.
 
@@ -174,7 +174,7 @@ Revision messages (`find cheaper restaurants`, `redo the accommodation`) re-run 
 **Port 8000 already in use**
 
 ```bash
-kill $(lsof -ti :8000)
+kill $(lsof -ti :8060)
 ```
 
 **New profile DB has no tables**

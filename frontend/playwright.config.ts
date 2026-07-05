@@ -6,7 +6,7 @@ export default defineConfig({
   retries: 0,
   reporter: "list",
   use: {
-    baseURL: "http://localhost:3000",
+    baseURL: "http://localhost:3060",
     screenshot: "only-on-failure",
     video: "off",
   },
