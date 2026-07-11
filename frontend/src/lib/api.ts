@@ -306,3 +306,46 @@ export async function fetchMemories(): Promise<Memories> {
   if (!res.ok) throw new Error(`Memories API error: ${res.status}`);
   return res.json() as Promise<Memories>;
 }
+
+// ── Usage / cost accounting ────────────────────────────────────────────────
+
+export interface UsageBreakdownRow {
+  key: string;
+  calls: number;
+  total_tokens: number;
+  cost_usd: number;
+}
+
+export interface UsageSummary {
+  window_days: number;
+  totals: {
+    calls: number;
+    prompt_tokens: number;
+    completion_tokens: number;
+    cost_usd: number;
+  };
+  by_model: UsageBreakdownRow[];
+  by_context: UsageBreakdownRow[];
+  by_day: UsageBreakdownRow[];
+}
+
+export interface UsageCall {
+  created_at: string;
+  model: string;
+  context: string;
+  prompt_tokens: number;
+  completion_tokens: number;
+  cost_usd: number | null;
+}
+
+export async function fetchUsageSummary(days = 30): Promise<UsageSummary> {
+  const res = await fetch(`${BASE_URL}/api/usage/summary?days=${days}`);
+  if (!res.ok) throw new Error(`Usage API error: ${res.status}`);
+  return res.json() as Promise<UsageSummary>;
+}
+
+export async function fetchRecentUsage(limit = 50): Promise<UsageCall[]> {
+  const res = await fetch(`${BASE_URL}/api/usage/recent?limit=${limit}`);
+  if (!res.ok) throw new Error(`Usage API error: ${res.status}`);
+  return res.json() as Promise<UsageCall[]>;
+}

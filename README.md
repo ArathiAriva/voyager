@@ -82,11 +82,13 @@ cp .env.example .env
 # Set OPENROUTER_API_KEY in .env
 ```
 
-Run database migrations:
+Run database migrations (backs up the DB first and auto-restores on failure — see INC-001):
 
 ```bash
-alembic upgrade head
+bash scripts/migrate.sh
 ```
+
+New migrations are also exercised against a seeded database by `tests/test_migrations.py` (runs with the normal pytest suite) — write the migration, run pytest, then migrate.
 
 Start the dev server:
 
@@ -200,3 +202,22 @@ cd frontend && npm run dev
 ```
 
 The MCP server does **not** need a separate terminal. The backend uses stdio transport, which spawns `server.py` as a subprocess on demand whenever the agent calls a travel tool (`get_weather`, `get_exchange_rate`). The only requirement is that the MCP server's `.venv` is set up (see MCP setup above).
+
+## Observability (Phoenix)
+
+LLM tracing via [Arize Phoenix](https://phoenix.arize.com) (OpenInference + OTel). Disabled by default; enable by setting in `backend/.env`:
+
+```
+PHOENIX_COLLECTOR_ENDPOINT=http://localhost:6006/v1/traces
+```
+
+Run Phoenix locally with `phoenix serve` (`pip install arize-phoenix`) or via the portal's compose (service `phoenix`, UI at http://phoenix.localhost or http://localhost:6006). Traces cover both the single-agent loop and the LangGraph planning graph (per-node latency, token usage, prompts/responses) — including eval harness runs, so `python -m evals.run` traces land in the same UI. See `backend/app/observability.py`.
+
+## Cost & token accounting
+
+Every LLM call is recorded to the `usage_log` table (model, prompt/completion tokens, cost, context label). Cost comes from OpenRouter's usage accounting (`usage: {include: true}`), so no local price table. Contexts: `chat`, `planning`, `memory_extraction`, `eval_judge`.
+
+- `GET /api/usage/summary?days=30` — totals + breakdowns by model / context / day
+- `GET /api/usage/recent?limit=50` — latest calls
+
+Implementation: `app/usage.py` wraps the OpenRouter client once (in `app/claude.py`); recording is fail-open and streaming calls pass through unrecorded. The table is created by `Base.metadata.create_all` at startup (add an Alembic migration if you regenerate a prod DB from migrations only).

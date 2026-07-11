@@ -8,6 +8,7 @@ const navItems = [
   { label: "Chats", href: "/chats", icon: "💬" },
   { label: "Trips", href: "/trips", icon: "🗺️" },
   { label: "Memories", href: "/memories", icon: "🧠" },
+  { label: "Usage", href: "/usage", icon: "📊" },
   { label: "Settings", href: "/settings", icon: "⚙️" },
 ];
 

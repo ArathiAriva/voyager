@@ -33,9 +33,9 @@ All conversation history in the development SQLite DB was lost. No user data aff
 
 ### Follow-up actions
 
-- [ ] Add a pre-migration backup step to the dev runbook (e.g. `cp voyager.db voyager.db.bak` before `alembic upgrade head`).
-- [ ] Test new migrations against a seeded DB before applying — keep a `seed.sql` or fixture script for this.
-- [ ] Consider switching to PostgreSQL before any real user data is stored (PostgreSQL handles `NOT NULL` + `DEFAULT` in `ALTER TABLE` correctly).
+- [x] Add a pre-migration backup step to the dev runbook — done 2026-07-05: `scripts/migrate.sh` backs up the DB before `alembic upgrade` and auto-restores it on failure. Use it instead of calling alembic directly.
+- [x] Test new migrations against a seeded DB before applying — done 2026-07-05: `tests/test_migrations.py` walks the full revision chain one step at a time against a database seeded with rows after every step, catching exactly the INC-001 class of failure. Runs with the normal pytest suite.
+- [x] Consider switching to PostgreSQL before any real user data is stored — decided 2026-07-05: Month 6 scope (see VISION.md) commits to Supabase Postgres + pgvector before any production deployment.
 
 ---
 

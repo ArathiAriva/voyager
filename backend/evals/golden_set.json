@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "description": "Golden planning prompts for single vs multi-agent comparison. Run against a seeded profile so memory/saved-places personalization is exercisable.",
+  "cases": [
+    {"id": "jp-7d", "prompt": "Plan my 7 days in Japan in November, split between Tokyo and Kyoto.", "tags": ["multi-city", "long"]},
+    {"id": "lisbon-3d", "prompt": "Plan a 3 day trip to Lisbon focused on food and viewpoints.", "tags": ["food", "short"]},
+    {"id": "nyc-weekend", "prompt": "Plan a weekend in New York City, I've been before so skip the big tourist stuff.", "tags": ["repeat-visitor", "personalization"]},
+    {"id": "bali-10d", "prompt": "Build an itinerary for 10 days in Bali balancing beaches, temples, and hiking.", "tags": ["long", "mixed-interests"]},
+    {"id": "paris-4d-budget", "prompt": "Plan a 4 day Paris trip on a tight budget, street food over restaurants.", "tags": ["budget", "food"]},
+    {"id": "rome-kids", "prompt": "Plan 5 days in Rome. Keep days relaxed, we won't want more than two big activities a day.", "tags": ["pacing"]},
+    {"id": "seoul-5d", "prompt": "Plan my 5 days in Seoul with a focus on markets, cafes, and one day trip outside the city.", "tags": ["day-trip"]},
+    {"id": "mexico-city-food", "prompt": "Build an itinerary for 4 days in Mexico City centred on food — use any restaurants I've saved.", "tags": ["saved-places", "personalization", "food"]},
+    {"id": "iceland-ring", "prompt": "Plan a 6 day Iceland trip in summer with a rental car, starting and ending in Reykjavik.", "tags": ["logistics", "road-trip"]},
+    {"id": "istanbul-3d", "prompt": "Plan a 3 day Istanbul itinerary, group things by neighbourhood so I'm not zigzagging across the city.", "tags": ["geography"]},
+    {"id": "bangkok-rain", "prompt": "Plan 4 days in Bangkok in September — account for the rainy season with indoor backups.", "tags": ["weather", "contingency"]},
+    {"id": "amsterdam-solo", "prompt": "Plan a solo week in Amsterdam mixing museums, cycling, and quiet evenings — match my usual travel style.", "tags": ["memory", "personalization"]},
+    {"id": "lima-cusco", "prompt": "Plan the itinerary for 8 days split between Lima and Cusco, with altitude acclimatisation built in.", "tags": ["multi-city", "feasibility"]},
+    {"id": "revision-cheaper", "prompt": "Plan 3 days in Barcelona, then find cheaper restaurants for the whole trip.", "tags": ["revision"]},
+    {"id": "vague-europe", "prompt": "Plan a week somewhere in Europe in spring — pick the destination based on what you know about me.", "tags": ["memory", "open-ended"]}
+  ]
+}

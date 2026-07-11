@@ -14,7 +14,10 @@ extracted inside each node via RunnableConfig.
 """
 
 import logging
+import uuid
 from typing import Literal
+
+from sqlalchemy import select
 
 from langgraph.graph import StateGraph, END
 from langgraph.types import Send, RunnableConfig
@@ -149,14 +152,59 @@ async def node_assemble_reply(state: PlanningState, config: RunnableConfig) -> d
     return {"final_reply": reply}
 
 
+def _dest_matches(a: str, b: str) -> bool:
+    """Loose destination match: 'Istanbul' ~ 'Istanbul, Turkey' (either direction)."""
+    a, b = a.lower().strip(), b.lower().strip()
+    a_city, b_city = a.split(",")[0].strip(), b.split(",")[0].strip()
+    return bool(a_city) and (a_city in b or b_city in a)
+
+
+async def _resolve_trip_id(state: PlanningState, session: AsyncSession) -> str | None:
+    """Find the trip this plan belongs to by destination, or create one.
+
+    The graph is invoked without a trip_id for fresh plans (the design doc's
+    'match by destination' step) — without this, persist_itinerary silently
+    no-ops and the itinerary is never saved.
+    """
+    brief = state.get("brief") or {}
+    destination = (brief.get("destination") or "").strip()
+    if not destination:
+        logger.warning("persist | no destination in brief — cannot resolve trip, skipping persist")
+        return None
+
+    trips = (await session.execute(select(TripORM))).scalars().all()
+    for trip in trips:
+        if _dest_matches(trip.destination, destination):
+            logger.info("persist | matched existing trip %s (%s)", trip.id[:8], trip.destination)
+            return trip.id
+
+    trip = TripORM(
+        id=str(uuid.uuid4()),
+        destination=destination,
+        dates=brief.get("dates") or "TBD",
+        status="upcoming",
+        emoji="🧭",
+        summary=f"Trip planned by Voyager: {destination}",
+        tags=[],
+    )
+    session.add(trip)
+    await session.commit()
+    await session.refresh(trip)
+    logger.info("persist | created trip %s (%s)", trip.id[:8], destination)
+    return trip.id
+
+
 async def node_persist_itinerary(state: PlanningState, config: RunnableConfig) -> dict:
     session = _session(config)
-    trip_id = state.get("trip_id")
     draft = state.get("itinerary_draft", [])
-    if trip_id and draft:
-        await planner.persist_itinerary(trip_id, draft, session)
-        await _auto_save_places(state, trip_id, session)
-    return {}
+    if not draft:
+        return {}
+    trip_id = state.get("trip_id") or await _resolve_trip_id(state, session)
+    if not trip_id:
+        return {}
+    await planner.persist_itinerary(trip_id, draft, session)
+    await _auto_save_places(state, trip_id, session)
+    return {"trip_id": trip_id}
 
 
 async def _auto_save_places(state: PlanningState, trip_id: str, session: AsyncSession) -> None:

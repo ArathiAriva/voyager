@@ -16,6 +16,8 @@ from app.models.conversation import Conversation, ConversationSummary, SendMessa
 from app.claude import get_client, get_model
 from app.tools import TOOL_SCHEMAS, execute_tool
 from app.mcp_client import mcp_tool_schemas, call_mcp_tool
+from app.flags import resolve_planner
+from app.usage import usage_context
 from app.planning.router import is_planning_request, run_planning_graph
 from app import memory
 
@@ -68,6 +70,7 @@ Preferences should be concrete and reusable (e.g. "prefers boutique hotels over 
 async def _extract_and_store_memory(conversation_id: str, history: list[dict]) -> None:
     """Fire-and-forget: extract episode + preferences from the conversation and store in Chroma."""
     try:
+        usage_context.set("memory_extraction")
         client = get_client()
         transcript = "\n".join(
             f"{m['role'].upper()}: {m['content']}"
@@ -189,9 +192,10 @@ async def send_message(
         mcp_tool_names = {s["function"]["name"] for s in mcp_schemas}
         all_tools = TOOL_SCHEMAS + mcp_schemas
 
-        # ── Multi-agent planning path ─────────────────────────────────────────
-        if is_planning_request(body.content):
-            logger.info("conv=%s | routing to planning graph", conversation_id[:8])
+        # ── Multi-agent planning path (feature-flagged, see app.flags) ────────
+        planner_mode = resolve_planner(body.planner)
+        if planner_mode == "multi" and is_planning_request(body.content):
+            logger.info("conv=%s | routing to planning graph (planner=%s)", conversation_id[:8], planner_mode)
 
             step_queue: asyncio.Queue[str | None] = asyncio.Queue()
 
@@ -199,6 +203,7 @@ async def send_message(
                 await step_queue.put(label)
 
             async def run_graph() -> str:
+                usage_context.set("planning")
                 try:
                     return await run_planning_graph(
                         body.content, session, emit_step=enqueue_step
@@ -248,6 +253,7 @@ async def send_message(
                 return
 
         # ── Standard agentic tool-call loop ──────────────────────────────────
+        usage_context.set("chat")
         yield _sse("step", {"label": "Thinking…"})
 
         client = get_client()

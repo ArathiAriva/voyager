@@ -34,3 +34,6 @@ class ConversationSummary(BaseModel):
 
 class SendMessageRequest(BaseModel):
     content: str
+    # Feature-flag override: which planner handles planning-intent messages.
+    # None -> use VOYAGER_PLANNER env / default (see app.flags).
+    planner: Literal["single", "multi"] | None = None

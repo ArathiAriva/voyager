@@ -1,4 +1,4 @@
-from sqlalchemy import String, ForeignKey, Text, DateTime, JSON
+from sqlalchemy import String, ForeignKey, Text, DateTime, JSON, Integer, Float
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from datetime import datetime, timezone
 from app.db import Base
@@ -96,3 +96,17 @@ class MessageORM(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
 
     conversation: Mapped["ConversationORM"] = relationship("ConversationORM", back_populates="messages")
+
+
+class UsageLogORM(Base):
+    """One row per LLM API call — token counts and OpenRouter-reported cost."""
+    __tablename__ = "usage_log"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
+    model: Mapped[str] = mapped_column(String, nullable=False)
+    context: Mapped[str] = mapped_column(String, nullable=False, default="unspecified")
+    prompt_tokens: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    completion_tokens: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    total_tokens: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    cost_usd: Mapped[float | None] = mapped_column(Float, nullable=True)
