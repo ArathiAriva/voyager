@@ -113,6 +113,7 @@ class SavedPlaceUpdate(BaseModel):
     area: str | None = None
     address: str | None = None
     notes: str | None = None
+    summary: str | None = None
 
 
 class SavedPlace(SavedPlaceBase):

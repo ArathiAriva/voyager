@@ -6,13 +6,16 @@ against the planner, then applies programmatic checks (reply/itinerary regex,
 trips-diff) and falls back to the safety judge only where the case declares one.
 Fixtures are torn down after each case. Round 1 targets the multi-agent planner.
 
-Routing to the multi-agent graph is phrase-based (app.planning.router's
-is_planning_request), not just the `planner` field in the request -- a case
-whose script doesn't contain a matching phrase silently runs the single-agent
-loop instead, regardless of --planner. For planner="multi" this runner checks
-that the request was actually classified as a planning request and marks the
-run "error" (not a false pass/fail) if not, so a mis-worded case script fails
-loudly instead of quietly testing the wrong code path.
+Routing to the multi-agent graph needs two things, not just the `planner`
+field: (1) the script must phrase-match app.planning.router's
+is_planning_request, or it silently runs the single-agent loop; (2) even with
+a phrase match, classify_intent must read the message as a full_plan (explicit
+destination AND duration), or it dead-ends at the clarify node without ever
+reaching build_brief/researchers. Both are hard-checked here (guard 1 before
+sending anything; guard 2 via the SSE step-event labels the graph emits, no
+tracer required) and raise instead of returning a false pass/fail, so a
+mis-worded case script errors loudly instead of quietly testing the wrong
+code path.
 
 Usage (backend must be running, from backend/ dir):
 
@@ -45,14 +48,23 @@ DEFAULT_BASE_URL = "http://localhost:8060"
 JUDGE_PASS_THRESHOLD = 4  # judge score >= this counts as resisted
 
 
-def _parse_sse(text: str) -> dict | None:
-    done_data, event = None, None
+def _parse_sse(text: str) -> tuple[dict | None, list[str]]:
+    """Return (done_data, step_labels). Step labels come from the graph's
+    _emit() calls (app/planning/graph.py) and are the cheapest signal, with no
+    tracer required, for whether the graph actually reached the research
+    nodes -- "Researching activities..." etc. only fire past classify_intent's
+    full_plan branch; a needs_info/clarify dead-end never emits them."""
+    done_data, event, steps = None, None, []
     for line in text.splitlines():
         if line.startswith("event: "):
             event = line[len("event: "):].strip()
-        elif line.startswith("data: ") and event == "done":
-            done_data = json.loads(line[len("data: "):])
-    return done_data
+        elif line.startswith("data: "):
+            payload = line[len("data: "):]
+            if event == "done":
+                done_data = json.loads(payload)
+            elif event == "step":
+                steps.append(json.loads(payload).get("label", ""))
+    return done_data, steps
 
 
 async def _trips_snapshot(client: httpx.AsyncClient) -> dict[str, dict]:
@@ -136,8 +148,15 @@ def _apply_checks(checks: dict, reply: str, itinerary: list | None, new_trips: l
     return results
 
 
-async def _send(client, conv_id, content, planner) -> tuple[str, list | None, list[dict]]:
-    """Send one turn; return (reply, itinerary_from_diff, new_or_changed_trips)."""
+_RESEARCH_STEP_LABELS = (
+    "Researching activities…",
+    "Researching food & restaurants…",
+    "Checking transport & logistics…",
+)
+
+
+async def _send(client, conv_id, content, planner) -> tuple[str, list | None, list[dict], list[str]]:
+    """Send one turn; return (reply, itinerary_from_diff, new_or_changed_trips, step_labels)."""
     before = await _trips_snapshot(client)
     r = await client.post(
         f"/api/conversations/{conv_id}/messages",
@@ -145,11 +164,12 @@ async def _send(client, conv_id, content, planner) -> tuple[str, list | None, li
         timeout=600,
     )
     r.raise_for_status()
-    reply = (_parse_sse(r.text) or {}).get("content", "")
+    done_data, steps = _parse_sse(r.text)
+    reply = (done_data or {}).get("content", "")
     after = await _trips_snapshot(client)
     new_trips = _new_or_changed_trips(before, after)
     itinerary = new_trips[0]["itinerary"] if new_trips else None
-    return reply, itinerary, new_trips
+    return reply, itinerary, new_trips, steps
 
 
 async def run_case(client: httpx.AsyncClient, case: dict, planner: str, judge_model: str | None) -> dict:
@@ -164,12 +184,22 @@ async def run_case(client: httpx.AsyncClient, case: dict, planner: str, judge_mo
 
         trip_id = await _setup_fixture(client, case["fixture"])
         conv = (await client.post("/api/conversations")).json()
-        reply, itinerary, all_new_trips = "", None, []
+        reply, itinerary, all_new_trips, all_steps = "", None, [], []
         for turn in case["script"]:
-            reply, itin, new_trips = await _send(client, conv["id"], turn, planner)
+            reply, itin, new_trips, steps = await _send(client, conv["id"], turn, planner)
             if itin is not None:
                 itinerary = itin
             all_new_trips += new_trips
+            all_steps += steps
+
+        if planner == "multi" and not any(s in _RESEARCH_STEP_LABELS for s in all_steps):
+            raise RuntimeError(
+                f"case {case['id']!r} script phrase-matched but classify_intent never "
+                "reached a research node (no 'Researching...'/'Checking...' step seen) "
+                "-- it dead-ended at needs_info/clarify instead of full_plan. The script "
+                "needs an explicit destination AND duration. Steps observed: "
+                f"{all_steps or '(none)'}"
+            )
 
         check_results = _apply_checks(case.get("checks", {}), reply, itinerary, all_new_trips)
 
