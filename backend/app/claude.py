@@ -11,11 +11,14 @@ def get_client() -> AsyncOpenAI:
     global _client
     if _client is None:
         from app.usage import instrument_client  # local import to avoid cycle
+        from app.tracing import instrument_client as instrument_tracing
 
-        _client = instrument_client(
-            AsyncOpenAI(
-                api_key=os.environ["OPENROUTER_API_KEY"],
-                base_url="https://openrouter.ai/api/v1",
+        _client = instrument_tracing(
+            instrument_client(
+                AsyncOpenAI(
+                    api_key=os.environ["OPENROUTER_API_KEY"],
+                    base_url="https://openrouter.ai/api/v1",
+                )
             )
         )
     return _client

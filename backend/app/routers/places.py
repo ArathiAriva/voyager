@@ -183,7 +183,7 @@ async def update_place(
     body: SavedPlaceUpdate,
     session: AsyncSession = Depends(get_session),
 ) -> SavedPlace:
-    await _get_trip_or_404(trip_id, session)
+    trip = await _get_trip_or_404(trip_id, session)
     place = await session.get(SavedPlaceORM, place_id)
     if not place or place.trip_id != trip_id:
         raise HTTPException(status_code=404, detail="Place not found")
@@ -193,7 +193,7 @@ async def update_place(
     await session.refresh(place)
 
     embed_text = place.summary or place.notes or place.name
-    memory.store_saved_place(place.id, trip_id, place.trip.destination, place.name, place.category, embed_text)
+    memory.store_saved_place(place.id, trip_id, trip.destination, place.name, place.category, embed_text)
 
     return place
 

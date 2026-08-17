@@ -20,6 +20,7 @@ frontend/.next/
 frontend/.env.local
 frontend/test-results/
 backend/evals/results/
+backend/trace_log.jsonl
 
 # Claude Code — ignore everything except project skills
 .claude/*

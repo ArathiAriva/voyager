@@ -26,6 +26,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.planning.state import PlanningState, RevisionScope
 from app.agents import planner, activities, food, accommodation, logistics, optimizer, critic
 from app.models.orm import TripORM
+from app.tracing import node_context
 
 logger = logging.getLogger("voyager.planning.graph")
 
@@ -45,6 +46,7 @@ async def _emit(config: RunnableConfig, label: str) -> None:
 # ── Node functions ────────────────────────────────────────────────────────────
 
 async def node_load_context(state: PlanningState, config: RunnableConfig) -> dict:
+    node_context.set("load_context")
     await _emit(config, "Loading your travel profile…")
     ctx = await planner.load_user_context(state["user_message"], _session(config))
     return {
@@ -57,6 +59,7 @@ async def node_load_context(state: PlanningState, config: RunnableConfig) -> dic
 async def node_classify_intent(state: PlanningState, config: RunnableConfig) -> dict:
     await _emit(config, "Understanding your request…")
     session = _session(config)
+    node_context.set("classify_intent")
     result = await planner.classify_intent(state["user_message"])
     intent = result.get("intent", "not_planning")
     domains = result.get("revision_domains") or ALL_DOMAINS
@@ -89,6 +92,7 @@ async def node_classify_intent(state: PlanningState, config: RunnableConfig) -> 
         "past_trips": state.get("past_trips", []),
         "saved_places": state.get("saved_places", []),
     }
+    node_context.set("build_brief")
     brief = await planner.build_brief(state["user_message"], ctx)
     updates["brief"] = brief
 
@@ -106,42 +110,50 @@ async def node_classify_intent(state: PlanningState, config: RunnableConfig) -> 
 
 async def node_clarify(state: PlanningState, config: RunnableConfig) -> dict:
     """Ask the user for missing planning details instead of running the full graph."""
+    node_context.set("clarify")
     missing = state.get("missing_info", ["destination", "duration"])
     reply = await planner.build_clarification(missing, state["user_message"])
     return {"final_reply": reply}
 
 
 async def node_activities(state: PlanningState, config: RunnableConfig) -> dict:
+    node_context.set("activities_researcher")
     await _emit(config, "Researching activities…")
     return await activities.run(state, _session(config))
 
 
 async def node_food(state: PlanningState, config: RunnableConfig) -> dict:
+    node_context.set("food_researcher")
     await _emit(config, "Researching food & restaurants…")
     return await food.run(state, _session(config))
 
 
 async def node_logistics(state: PlanningState, config: RunnableConfig) -> dict:
+    node_context.set("logistics_researcher")
     await _emit(config, "Checking transport & logistics…")
     return await logistics.run(state, _session(config))
 
 
 async def node_accommodation(state: PlanningState, config: RunnableConfig) -> dict:
+    node_context.set("accommodation_researcher")
     await _emit(config, "Finding accommodation options…")
     return await accommodation.run(state, _session(config))
 
 
 async def node_optimizer(state: PlanningState, config: RunnableConfig) -> dict:
+    node_context.set("optimizer")
     await _emit(config, "Building your day-by-day itinerary…")
     return await optimizer.run(state, _session(config))
 
 
 async def node_critic(state: PlanningState, config: RunnableConfig) -> dict:
+    node_context.set("critic")
     await _emit(config, "Reviewing itinerary quality…")
     return await critic.run(state, _session(config))
 
 
 async def node_assemble_reply(state: PlanningState, config: RunnableConfig) -> dict:
+    node_context.set("assemble_reply")
     await _emit(config, "Assembling your itinerary…")
     reply = await planner.assemble_reply(
         state.get("brief", {}),
