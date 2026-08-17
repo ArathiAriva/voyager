@@ -8,7 +8,7 @@ This version has breaking changes — APIs, conventions, and file structure may 
 
 ## What this app is
 
-The Voyager frontend is a Next.js 16 / React 19 app for an AI travel companion. It talks to the FastAPI backend at `http://localhost:8000` (or `NEXT_PUBLIC_API_URL`).
+The Voyager frontend is a Next.js 16 / React 19 app for an AI travel companion. It talks to the FastAPI backend at `http://localhost:8060` (or `NEXT_PUBLIC_API_URL`).
 
 ## Stack
 
@@ -61,7 +61,7 @@ src/
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `NEXT_PUBLIC_API_URL` | `http://localhost:8000` | Backend base URL |
+| `NEXT_PUBLIC_API_URL` | `http://localhost:8060` | Backend base URL |
 
 Set in `.env.local` (already gitignored).
 

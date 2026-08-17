@@ -1,4 +1,4 @@
-description: Launch the Voyager backend (FastAPI :8000) and frontend (Next.js :3000)
+description: Launch the Voyager backend (FastAPI :8060) and frontend (Next.js :3000)
 
 # Run — Voyager
 
@@ -34,7 +34,7 @@ Start both servers in the background from the repo root:
 cd /Users/aarathi/claude-projects/voyager
 
 # Backend
-cd backend && source .venv/bin/activate && uvicorn app.main:app --reload --port 8000 > /tmp/voyager-backend.log 2>&1 &
+cd backend && source .venv/bin/activate && uvicorn app.main:app --reload --port 8060 > /tmp/voyager-backend.log 2>&1 &
 BACKEND_PID=$!
 cd ..
 
@@ -51,10 +51,10 @@ Wait for both to be ready, then confirm:
 ```bash
 # Backend health check
 for i in {1..20}; do
-  curl -sf http://localhost:8000/health > /dev/null && break
+  curl -sf http://localhost:8060/health > /dev/null && break
   sleep 0.5
 done
-curl -s http://localhost:8000/health
+curl -s http://localhost:8060/health
 # → {"status":"ok"}
 
 # Frontend (307 redirect to /chat is expected)
@@ -69,7 +69,7 @@ Logs:
 ## Stop
 
 ```bash
-kill $(lsof -ti :8000) 2>/dev/null && echo "backend stopped"
+kill $(lsof -ti :8060) 2>/dev/null && echo "backend stopped"
 kill $(lsof -ti :3000) 2>/dev/null && echo "frontend stopped"
 ```
 
