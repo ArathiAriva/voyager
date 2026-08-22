@@ -107,7 +107,7 @@ async def update_journal_entry(
     body: JournalEntryUpdate,
     session: AsyncSession = Depends(get_session),
 ) -> JournalEntry:
-    await _get_trip_or_404(trip_id, session)
+    trip = await _get_trip_or_404(trip_id, session)
     entry = await session.get(JournalEntryORM, entry_id)
     if not entry or entry.trip_id != trip_id:
         raise HTTPException(status_code=404, detail="Journal entry not found")
