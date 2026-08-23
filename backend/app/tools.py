@@ -186,13 +186,17 @@ TOOL_SCHEMAS = [
             "description": (
                 "Search the user's saved places semantically. Use this when the user asks about "
                 "places they've bookmarked, or when building an itinerary and you want to incorporate "
-                "their saved spots. Optionally scope to one trip or one category."
+                "their saved spots. ALWAYS pass `destination` when you are working on a specific "
+                "trip or city -- saved places span every trip the user has taken, so an unscoped "
+                "search returns restaurants from other countries. Optionally also scope to one "
+                "trip or one category."
             ),
             "parameters": {
                 "type": "object",
                 "properties": {
                     "query": {"type": "string", "description": "What to search for, e.g. 'great ramen' or 'boutique hotels'."},
                     "trip_id": {"type": "string", "description": "Optional: restrict to one trip."},
+                    "destination": {"type": "string", "description": "Optional: restrict to places saved for one destination, e.g. 'Rome' or 'Rome, Italy'."},
                     "category": {
                         "type": "string",
                         "enum": ["restaurant", "cafe", "bar", "hotel", "neighbourhood", "attraction", "shop", "beach", "other"],
@@ -373,6 +377,7 @@ async def _execute_search_places(args: dict, session: AsyncSession) -> str:
         args["query"],
         trip_id=args.get("trip_id"),
         category=args.get("category"),
+        destination=args.get("destination"),
     )
     if not hits:
         return json.dumps({"message": "No saved places found matching that query."})

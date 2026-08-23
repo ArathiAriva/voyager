@@ -133,3 +133,74 @@ def test_search_returns_both_episodes_and_preferences():
     results = search_memory("Vietnam food")
     assert len(results["episodes"]) >= 1
     assert len(results["preferences"]) >= 1
+
+
+# ── Saved-place retrieval scoping (B-6) ─────────────────────────────────────
+
+@pytest.fixture
+def isolated_places(monkeypatch):
+    """Fresh `places` collection, separate from the autouse episodic/semantic one."""
+    import chromadb
+    import app.memory as mem
+
+    client = chromadb.EphemeralClient()
+    try:
+        client.delete_collection("places")
+    except Exception:
+        pass
+    col = client.get_or_create_collection("places")
+    monkeypatch.setattr(mem, "_places", lambda: col)
+    return col
+
+
+def _seed_places(mem):
+    mem.store_saved_place("p1", "trip-rome", "Rome, Italy", "Roscioli", "restaurant",
+                          "Deli and restaurant near Campo de' Fiori.")
+    mem.store_saved_place("p2", "trip-lis", "Lisbon, Portugal", "A Licorista", "restaurant",
+                          "Traditional tile-covered restaurant, pork dishes.")
+    mem.store_saved_place("p3", "trip-ist", "Istanbul, Turkey", "Neolokal", "restaurant",
+                          "Fine dining, farm-to-table Turkish cuisine.")
+
+
+def test_search_saved_places_unscoped_returns_all_destinations(isolated_places):
+    """Baseline: without a destination filter, retrieval spans every trip."""
+    import app.memory as mem
+    _seed_places(mem)
+    hits = mem.search_saved_places("great restaurant", category="restaurant")
+    assert {h["name"] for h in hits} == {"Roscioli", "A Licorista", "Neolokal"}
+
+
+def test_search_saved_places_scopes_to_destination(isolated_places):
+    """B-6: a Rome plan must not retrieve Lisbon/Istanbul saved places."""
+    import app.memory as mem
+    _seed_places(mem)
+    hits = mem.search_saved_places("great restaurant", category="restaurant",
+                                   destination="Rome, Italy")
+    assert [h["name"] for h in hits] == ["Roscioli"]
+
+
+def test_search_saved_places_destination_match_is_fuzzy(isolated_places):
+    """The brief says 'Rome'; the saved place says 'Rome, Italy'. Must still match."""
+    import app.memory as mem
+    _seed_places(mem)
+    hits = mem.search_saved_places("great restaurant", destination="Rome")
+    assert [h["name"] for h in hits] == ["Roscioli"]
+
+
+def test_search_saved_places_unknown_destination_returns_nothing(isolated_places):
+    import app.memory as mem
+    _seed_places(mem)
+    assert mem.search_saved_places("great restaurant", destination="Osaka, Japan") == []
+
+
+def test_search_saved_places_respects_n_results_after_filtering(isolated_places):
+    """Over-fetching for the post-filter must not overshoot the caller's limit."""
+    import app.memory as mem
+    for i in range(5):
+        mem.store_saved_place(f"r{i}", "trip-rome", "Rome, Italy", f"Trattoria {i}",
+                              "restaurant", "Roman pasta and wine.")
+    mem.store_saved_place("l1", "trip-lis", "Lisbon, Portugal", "A Licorista",
+                          "restaurant", "Portuguese tiles and pork.")
+    hits = mem.search_saved_places("pasta", destination="Rome", n_results=3)
+    assert len(hits) == 3
+    assert all(h["destination"] == "Rome, Italy" for h in hits)

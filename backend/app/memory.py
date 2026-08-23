@@ -14,6 +14,8 @@ import os
 import chromadb
 from chromadb.config import Settings
 
+from app.utils import dest_matches
+
 logger = logging.getLogger("voyager.memory")
 
 _client: chromadb.ClientAPI | None = None
@@ -151,7 +153,22 @@ def search_saved_places(
     trip_id: str | None = None,
     category: str | None = None,
     n_results: int = 8,
+    destination: str | None = None,
 ) -> list[dict]:
+    """Semantic search over saved places.
+
+    `destination` scopes results to one place-name, e.g. "Rome" won't return
+    saved places from Lisbon. It exists because the planning researchers have no
+    trip_id to filter on: for a fresh plan the trip doesn't exist yet (it's
+    resolved/created at persist time, see planning/graph.py), so destination is
+    the only scope available while research is running. Without it, planning a
+    Rome trip retrieves every saved restaurant the user has anywhere.
+
+    Matching is fuzzy ("Rome" ~ "Rome, Italy") via utils.dest_matches, which
+    Chroma's `where` cannot express, so it is applied after the query. To keep
+    the post-filter from starving the result set, the vector search over-fetches
+    and the caller's n_results is applied to the filtered hits.
+    """
     collection = _places()
     count = collection.count()
     if count == 0:
@@ -164,7 +181,10 @@ def search_saved_places(
         where = {"category": category}
     else:
         where = {}
-    kwargs: dict = {"query_texts": [query], "n_results": min(n_results, count)}
+    # Over-fetch when a destination filter will be applied after the query, so
+    # near-matches from other destinations don't crowd out the ones we want.
+    fetch = min(count, n_results * 5 if destination else n_results)
+    kwargs: dict = {"query_texts": [query], "n_results": fetch}
     if where:
         kwargs["where"] = where
     results = collection.query(**kwargs)
@@ -175,14 +195,20 @@ def search_saved_places(
             results["metadatas"][0],  # type: ignore[index]
             results["ids"][0],
         ):
+            place_dest = meta.get("destination", "")
+            if destination and not dest_matches(destination, place_dest):
+                continue
             hits.append({
                 "place_id": cid,
-                "destination": meta.get("destination", ""),
+                "destination": place_dest,
                 "name": meta.get("name", ""),
                 "category": meta.get("category", ""),
                 "text": doc,
             })
-    logger.info("memory | places search '%s' → %d hits", query[:40], len(hits))
+            if len(hits) >= n_results:
+                break
+    logger.info("memory | places search '%s'%s → %d hits", query[:40],
+                f" [dest={destination}]" if destination else "", len(hits))
     return hits
 
 

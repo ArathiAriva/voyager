@@ -79,6 +79,12 @@ async def run(state: PlanningState, session: AsyncSession, model: str | None = N
             # Scope to food categories
             if tc.function.name == "search_places" and "category" not in args:
                 args["category"] = "restaurant"
+            # Scope retrieval to this trip's destination. The researchers have no
+            # trip_id (a fresh plan's trip is created later, at persist time), so
+            # destination is the only scope available -- without it a Rome plan
+            # retrieves the user's saved Lisbon and Istanbul places too.
+            if tc.function.name == "search_places" and brief.get("destination"):
+                args.setdefault("destination", brief["destination"])
             result = await execute_tool(tc.function.name, args, session)
             history.append({"role": "tool", "tool_call_id": tc.id, "content": result})
 

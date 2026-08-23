@@ -26,6 +26,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.planning.state import PlanningState, RevisionScope
 from app.agents import planner, activities, food, accommodation, logistics, optimizer, critic
 from app.models.orm import TripORM
+from app.utils import dest_matches as _dest_matches
 from app.tracing import node_context
 
 logger = logging.getLogger("voyager.planning.graph")
@@ -162,28 +163,6 @@ async def node_assemble_reply(state: PlanningState, config: RunnableConfig) -> d
         state.get("conflicts", []),
     )
     return {"final_reply": reply}
-
-
-def _dest_matches(a: str, b: str) -> bool:
-    """Loose destination match: 'Istanbul' ~ 'Istanbul, Turkey' (either direction).
-
-    City name must match exactly (case-insensitive) -- word-substring matching
-    on city alone previously caused false collisions ('Rome' ~ 'New Rome'). When
-    both sides specify a region/country, that must also match, so same-named
-    cities in different countries don't collide ('San Jose, Costa Rica' ~
-    'San Jose, USA', 'Valencia, Spain' ~ 'Valencia, Venezuela'); when one side
-    omits the region, city-only equality is enough."""
-    a, b = a.lower().strip(), b.lower().strip()
-    a_parts = [p.strip() for p in a.split(",", 1)]
-    b_parts = [p.strip() for p in b.split(",", 1)]
-    a_city, b_city = a_parts[0], b_parts[0]
-    if not a_city or a_city != b_city:
-        return False
-    a_region = a_parts[1] if len(a_parts) > 1 else None
-    b_region = b_parts[1] if len(b_parts) > 1 else None
-    if a_region and b_region:
-        return a_region == b_region or a_region in b_region or b_region in a_region
-    return True
 
 
 async def _resolve_trip_id(state: PlanningState, session: AsyncSession) -> str | None:
