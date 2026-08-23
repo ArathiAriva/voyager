@@ -18,7 +18,21 @@ Arize Phoenix via OpenInference/OTel. Opt-in: set `PHOENIX_COLLECTOR_ENDPOINT=ht
 
 ### Local LLM tracing (`backend/app/tracing.py`)
 
-A lighter-weight complement to Phoenix for when you don't want a collector running: set `VOYAGER_TRACE_LLM=1` to log every non-streaming LLM call (full messages in, content/tool-calls out) as one JSON line to `VOYAGER_TRACE_PATH` (default `./trace_log.jsonl`). Off by default; both this and Phoenix can be on at once. Each entry carries `context` (the existing `usage_context` label: `chat`/`planning`/`eval_judge`/...) and `node` — a finer-grained label set by each LangGraph node function (`load_context`, `classify_intent`, `build_brief`, `activities_researcher`, `food_researcher`, `logistics_researcher`, `accommodation_researcher`, `optimizer`, `critic`, `clarify`, `assemble_reply`) right before it calls the LLM, via the `node_context` contextvar. Useful for safety-eval forensics — e.g. filtering to `node=build_brief` to check whether an injected instruction survives that node's summarization step (see `docs/safety-evals-spec.md`).
+A lighter-weight complement to Phoenix for when you don't want a collector running: set `VOYAGER_TRACE_LLM=1` to log every non-streaming LLM call (full messages in, content/tool-calls out) as one JSON line to `VOYAGER_TRACE_PATH` (default `./trace_log.jsonl`). **On by default in local dev** (set in `backend/.env`) so the planner's intermediate outputs stay queryable after the fact; both this and Phoenix can be on at once. Each entry carries `context` (the existing `usage_context` label: `chat`/`planning`/`eval_judge`/...) and `node` — a finer-grained label set by each LangGraph node function (`load_context`, `classify_intent`, `build_brief`, `activities_researcher`, `food_researcher`, `logistics_researcher`, `accommodation_researcher`, `optimizer`, `critic`, `clarify`, `assemble_reply`) right before it calls the LLM, via the `node_context` contextvar.
+
+Read entries back with `python -m evals.trace_query`:
+
+```sh
+python -m evals.trace_query --nodes                    # what was captured, with counts
+python -m evals.trace_query --node build_brief -n 3    # the last 3 planning briefs
+python -m evals.trace_query --node critic --full       # untruncated input + output
+python -m evals.trace_query --grep AZURE-PELICAN       # find a string in any field
+python -m evals.trace_query --node build_brief --json  # raw entries, for piping
+```
+
+Two things to know. **The brief is the highest-value thing in here** — it's the only place you can see what the planner actually decided about the user before the researchers ran, and it's not persisted anywhere else (it lives in LangGraph's in-memory `PlanningState` and is discarded when the run ends). **Entries are unredacted** — full prompt and response bodies, so every conversation, saved place, and journal excerpt that reaches an LLM. The file is gitignored and rolls to a single `.1` backup past `VOYAGER_TRACE_MAX_MB` (default 50), but treat it as sensitive on any profile holding real data.
+
+Also useful for safety-eval forensics — e.g. filtering to `node=build_brief` to check whether an injected instruction survives that node's summarization step (see `docs/safety-evals-spec.md`).
 
 ## Cost & token accounting (`backend/app/usage.py`)
 
