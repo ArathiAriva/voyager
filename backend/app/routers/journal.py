@@ -20,7 +20,7 @@ router = APIRouter(prefix="/trips/{trip_id}/journal", tags=["journal"])
 JOURNAL_EXTRACTION_PROMPT = """You are a memory extraction assistant for a travel journal app.
 Given a travel journal entry, extract:
 1. A one-sentence episode summary of what happened.
-2. A list of specific user preferences or facts revealed (empty list if none).
+2. A list of durable user preferences revealed (empty list if none).
 
 Respond with JSON only, no prose:
 {
@@ -28,7 +28,19 @@ Respond with JSON only, no prose:
   "preferences": ["...", "..."]
 }
 
-Preferences should be concrete and reusable (e.g. "avoids overpriced tourist restaurants", "enjoys slow mornings in cafés"). Omit vague entries."""
+Preferences must pass BOTH tests:
+
+1. Concrete and reusable — e.g. "avoids overpriced tourist restaurants", "enjoys
+   slow mornings in cafés". Omit vague entries.
+2. Durable — still true on a completely different trip a year from now. Exclude
+   anything tied to this specific trip: destinations, dates, durations, weather,
+   or what the user did on a particular day.
+
+Durable (include): "avoids overpriced tourist restaurants", "prefers early starts".
+Transient (exclude): "visited Kyoto in April 2024", "traveled to Barcelona for 3 days",
+"expects rainy season weather".
+
+The episode summary is where trip-specific detail belongs — put it there, not in preferences."""
 
 
 async def _extract_journal_memory(entry_id: str, trip_destination: str, body: str) -> None:

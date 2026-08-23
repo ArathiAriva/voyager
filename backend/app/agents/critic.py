@@ -56,10 +56,21 @@ Be a constructive critic, not a perfectionist."""
 
 
 async def run(state: PlanningState, session: AsyncSession, model: str | None = None) -> dict:
+    brief = state.get("brief", {})
     payload = {
         "itinerary": state.get("itinerary_draft", []),
-        "user_preferences": state.get("user_preferences", []),
-        "brief": state.get("brief", {}),
+        # Score against the same preferences the plan was built from, not the
+        # raw memory list. build_brief already filters retrieved preferences
+        # (dropping stale/contradictory entries); passing the unfiltered list
+        # here meant the critic judged the plan against a *different* set than
+        # the researchers used -- an unfair evaluation that turned memory noise
+        # into wasted revision loops via should_revise. Falls back to the raw
+        # list only if the brief has no preferences (e.g. build_brief failed).
+        "user_preferences": (
+            brief.get("user_context", {}).get("preferences")
+            or state.get("user_preferences", [])
+        ),
+        "brief": brief,
         "unplaced_items": state.get("unplaced_items", []),
         "conflicts": state.get("conflicts", []),
     }

@@ -8,6 +8,7 @@ Both collections use Chroma's default local embeddings (all-MiniLM-L6-v2), no AP
 The Chroma DB is persisted to ./chroma_db relative to where the server runs.
 """
 
+import hashlib
 import logging
 import os
 import chromadb
@@ -43,15 +44,26 @@ def store_episode(conversation_id: str, summary: str) -> None:
     logger.info("memory | episodic stored for conv=%s", conversation_id[:8])
 
 
+def _preference_id(pref: str) -> str:
+    """Content-addressed ID for a preference string.
+
+    Must be stable across processes: Python's built-in hash() is salted per
+    process (PYTHONHASHSEED), so the previous `str(abs(hash(pref)))` produced a
+    different ID for identical text on every server restart and defeated the
+    upsert dedup it was meant to provide. Normalising case and whitespace also
+    collapses near-identical rows that differ only in capitalisation.
+    """
+    normalized = " ".join(pref.split()).lower()
+    return hashlib.sha256(normalized.encode()).hexdigest()[:32]
+
+
 def store_preferences(preferences: list[str]) -> None:
     """Upsert extracted user preferences into semantic memory."""
     if not preferences:
         return
     collection = _semantic()
     for pref in preferences:
-        # Use a deterministic ID so the same preference text deduplicates naturally
-        pref_id = str(abs(hash(pref)))
-        collection.upsert(ids=[pref_id], documents=[pref])
+        collection.upsert(ids=[_preference_id(pref)], documents=[pref])
     logger.info("memory | %d preference(s) upserted", len(preferences))
 
 

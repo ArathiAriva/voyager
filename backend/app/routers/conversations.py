@@ -56,7 +56,7 @@ SYSTEM_PROMPT = (
 EXTRACTION_PROMPT = """You are a memory extraction assistant for a travel app.
 Given a conversation, extract:
 1. A one-sentence episode summary describing what happened in this conversation.
-2. A list of specific user preferences or facts revealed (empty list if none).
+2. A list of durable user preferences revealed (empty list if none).
 
 Respond with JSON only, no prose:
 {
@@ -64,7 +64,20 @@ Respond with JSON only, no prose:
   "preferences": ["...", "..."]
 }
 
-Preferences should be concrete and reusable (e.g. "prefers boutique hotels over chains", "dislikes overly touristy areas", "enjoys street food"). Omit vague or uninformative entries."""
+Preferences must pass BOTH tests:
+
+1. Concrete and reusable — e.g. "prefers boutique hotels over chains", "dislikes
+   overly touristy areas", "enjoys street food". Omit vague or uninformative entries.
+2. Durable — still true on a completely different trip a year from now. Exclude
+   anything tied to a current or planned trip: destinations, dates, durations,
+   weather, or what the user is doing right now. Also exclude observations about
+   the user's use of the app itself.
+
+Durable (include): "travels on a tight budget", "prefers relaxed pacing over packed days".
+Transient (exclude): "planning a 7-day trip", "currently in Rome", "traveling in November",
+"expects rainy season weather", "uses saved places for trip planning".
+
+The episode summary is where trip-specific detail belongs — put it there, not in preferences."""
 
 
 async def _extract_and_store_memory(conversation_id: str, history: list[dict]) -> None:
