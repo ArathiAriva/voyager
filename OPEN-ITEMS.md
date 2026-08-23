@@ -122,11 +122,26 @@ No cap, TTL, aging, compaction, or contradiction handling. Growth is monotonic a
 when planning Tokyo. Depends on M-2; the filter pattern already exists in
 `search_journals` (`memory.py:103`).
 
-### M-6 — Every exchange re-extracts the entire transcript
+### M-6 — Every exchange re-extracts the entire transcript · **not worth fixing yet**
 
-`conversations.py:88-92` re-sends the whole conversation each time. A 20-message
-conversation re-extracts the same early preferences ~10 times — a direct
-contributor to both the duplicate rate and the usage bill.
+`conversations.py:88-92` re-sends the whole conversation to the extractor on every
+exchange, so turn 1 is re-processed on turns 2, 3, 4… Quadratic in conversation
+length, and the original analysis flagged it as a contributor to both the
+duplicate rate and the usage bill.
+
+**Measured 2026-08-22, and the premise doesn't hold at current scale:**
+conversations in this profile are median **2** messages, max **4** — so almost
+nothing is re-extracted. Across 104 conversations the redundancy is ~1% of turns
+sent. Memory extraction is **2% of total LLM spend** ($0.077 over 96 calls), so
+the recoverable waste is a fraction of a cent.
+
+Both obvious fixes cost something real in exchange: extracting only the newest
+exchange loses cross-turn inference (a preference stated in turn 1 and confirmed
+in turn 5 goes unnoticed), and a windowed transcript is a no-op at these lengths.
+Adding a processed-watermark to `messages` would need an Alembic migration.
+
+**Revisit when** conversations routinely exceed ~8 messages, or `memory_extraction`
+climbs meaningfully as a share of spend — both checkable from `usage_log`.
 
 ### M-7 — Episodic memory has its own duplicate problem
 
