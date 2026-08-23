@@ -16,29 +16,36 @@ Severity is about consequence if left alone, not effort to fix.
 
 ## Bugs
 
-### B-1 — Journal entries never produce episodic memories · **confirmed live**
+### ~~B-1 — Journal entries never produce episodic memories~~ · **fixed 2026-08-23**
 
-`journal.py:68` writes episodes under `journal-{entry_id}`, but the live profile
-has **18 journal entries and 0 `journal-` prefixed episodes**. Journal extraction
-is failing silently, or the episodes are being lost. `journal.py:72-73` swallows
-every exception into a log line, so a persistent failure is invisible.
+Root cause was task lifetime, not extraction. `asyncio.create_task(...)` without
+retaining the result means the event loop holds only a weak reference, so the task can
+be garbage-collected mid-await and vanish — no exception, no log line, no episode. The
+extraction code itself was fine and succeeded first try on a fresh profile, which is why
+this looked like a silent failure with no error to find.
 
-Journal RAG (`search_journal`) still works — that reads the `journals` collection,
-which is populated. What's missing is the derived episodic memory, so journal
-content never reaches `search_memory`.
+Bulk seeding is where it bit: `scripts/seed.py` posts N entries back-to-back, each
+spawning an unreferenced task. Rapid-fire posting alone did *not* reproduce it against a
+warm server, so the exact trigger is timing-dependent — the fix removes the possibility
+rather than the trigger.
 
-**Severity:** medium — a whole documented feature (Month 2/3 journal→memory) may
-be silently dead. **Next step:** create a journal entry with the backend running
-and watch the logs; the `except` block will name the failure.
-Source: [docs/memory-quality-analysis.md](docs/memory-quality-analysis.md) §2.8.
+Fixed: `_spawn_extraction` holds a strong reference until completion; the two silent
+`return` paths (empty response, no episode in response) now log warnings;
+`scripts/backfill_journal_memory.py` repairs existing profiles (idempotent, dry-run by
+default). Applied to `egwene` — 12/12 entries now have an episode and surface through
+`search_memory`.
 
-### B-2 — Journal PATCH re-embeds but never re-extracts
+**B-4 is the same defect class** and is still open for `conversations.py:370`.
 
-`journal.py:130` calls `store_journal_entry` on update but not
-`_extract_journal_memory`. Preferences derived from the original text survive an
-edit — including preferences the user just edited away. Asymmetric with delete
-(`journal.py:144`), which removes the journal embedding but has no way to remove
-derived preferences (blocked on stable IDs, now fixed for preferences by `e966e9f`).
+### B-2 — Journal PATCH doesn't revoke derived preferences · **half fixed 2026-08-23**
+
+The episode half is fixed: PATCH now re-extracts when `body` changed, and
+`store_episode` upserts on `journal-{id}`, so the episode reflects the edited text
+rather than the original (verified: one row, updated content, no duplicate).
+
+Still open: derived **preferences** survive an edit, including ones the user just edited
+away. They have no back-reference to the entry that produced them, so there is nothing
+to revoke — the same missing-provenance problem as M-2. Fix this with M-2, not before.
 
 **Severity:** low-medium — silent staleness, no crash.
 
@@ -58,7 +65,10 @@ retains no reference — under CPython the task can be garbage-collected mid-fli
 Nothing bounds concurrency. Failures are logged and dropped
 (`conversations.py:118-119`).
 
-**Severity:** low now, real under load. Plausibly a contributing cause of B-1.
+**Severity:** low now, real under load. **This is confirmed, not speculative** — the
+identical pattern in `journal.py` was the root cause of B-1 (episodes silently never
+written). The fix there was a module-global set holding strong references until
+completion; apply the same here, plus a bound on concurrency.
 
 ### ~~B-6 — Planner retrieves saved places from every trip, unscoped~~ · **fixed 2026-08-22**
 
