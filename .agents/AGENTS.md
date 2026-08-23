@@ -32,7 +32,7 @@ Chat messages hit `POST /api/conversations/{id}/messages` (SSE stream). Planning
 - [data-model.md](data-model.md) — SQLite tables, Chroma collections, migrations
 - [evals-ops.md](evals-ops.md) — Eval harness, planner feature flag, Phoenix tracing, cost accounting
 
-Also see [VISION.md](../VISION.md) (roadmap, Month 5–6 scope decisions), [README.md](../README.md) (setup), [docs/multi-agent-planning.md](../docs/multi-agent-planning.md) (planner design doc), and `INCIDENTS.md`.
+Also see [OPEN-ITEMS.md](../OPEN-ITEMS.md) (known bugs, deferred decisions, follow-up work — check here before starting anything), [VISION.md](../VISION.md) (roadmap, Month 5–6 scope decisions), [README.md](../README.md) (setup), [docs/multi-agent-planning.md](../docs/multi-agent-planning.md) (planner design doc), and `INCIDENTS.md`.
 
 ## Guiding principles
 

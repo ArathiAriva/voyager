@@ -323,3 +323,8 @@ Stated explicitly, since the brief asked:
 - **No per-user or per-trip scoping in code.** Profile isolation is a side effect of `CHROMA_PATH` being read once at import (`memory.py:19`) into a process-global singleton — not a logical guarantee, and it breaks silently in any in-process multi-profile scenario.
 - **No deletion path.** Nothing in the codebase can remove a stored preference. Journal deletion (`journal.py:132`) removes the entry embedding but leaves derived preferences orphaned forever.
 - **`n_results=5` is not a mitigation.** It is deterministic distance ranking over a skewed corpus, so it reliably over-samples the dominant cluster rather than sampling neutrally — measured at 2–3 distinct traits per 5 slots on food-adjacent queries, and returning zero relevant rows on an accommodation query.
+
+---
+
+*Status: recommendations 3.1, 3.3(a), and 3.6 shipped in `e966e9f`. Everything still
+open from this analysis is tracked as items M-1 … M-8 in [OPEN-ITEMS.md](../OPEN-ITEMS.md).*

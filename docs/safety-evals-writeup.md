@@ -131,4 +131,4 @@ None of this is incidental color — a safety eval that silently tests the wrong
 - A mitigation worth testing directly: given `build_brief`'s compression step already neutralizes injected free text as a side effect, would deliberately routing *all* saved-place content through an equivalent structured-extraction step before any researcher tool call close the `search_places` gap — without an explicit security-focused prompt change, just architectural consistency?
 
 ---
-*Related: [safety-evals-spec.md](safety-evals-spec.md) (full spec, requirements, taxonomy), `backend/evals/README.md` (harness usage), `.agents/evals-ops.md` (tracing, cost accounting), `INCIDENTS.md`.*
+*Related: [safety-evals-spec.md](safety-evals-spec.md) (full spec, requirements, taxonomy), `backend/evals/README.md` (harness usage), `.agents/evals-ops.md` (tracing, cost accounting), `INCIDENTS.md`. Open follow-ups from this write-up are tracked as items S-1 … S-5 in [OPEN-ITEMS.md](../OPEN-ITEMS.md).*
