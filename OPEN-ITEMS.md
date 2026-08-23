@@ -77,34 +77,39 @@ Steps 1–2 of its sequencing shipped in `e966e9f` (stable sha256 preference IDs
 durability test in both extraction prompts, critic scoring against the brief's
 filtered list). What remains:
 
-### M-1 — The existing 289 preference rows are still polluted
+### ~~M-1 — The existing preference rows are polluted~~ · **done** (`6d8144b`)
 
-The prompt fix stops new inflow; it doesn't touch history. ~33 transient entries
-and 5 contradictory duration claims remain, and were still reaching the critic on
-a post-fix verification run. Analysis recommends **rebuilding** the dev collection
-over backfilling, given it's a dev profile with known-bad composition.
+Purged all 292 rows via `scripts/purge_preferences.py` (dry-run by default,
+JSON backup written to `backend/data/memory-backups/`). Also dropped 6 orphaned
+journal embeddings, so `journals` is now 12/12 consistent with SQLite.
 
-**Blocks:** honest evaluation of whether the prompt fix worked, since retrieval
-still surfaces old rows.
+Verified after: a conversation mentioning "5 days", "Tokyo" and "this November"
+stored **zero** of those as preferences — only three durable traits — with the
+trip detail routed to the episode summary. Under the old prompt all three would
+have been stored (the purged set contained `planning a 7-day trip`, `traveling
+in November`).
+
+Purge rather than rebuild because preferences are LLM-distilled and exist only
+in Chroma — nothing in SQLite reconstructs them. The collection regrows from use.
 
 ### M-2 — `store_preferences` has no metadata · **structural unlock**
 
-No `created_at`, `source`, or `trip_id`. All 289 live rows have `metadatas = None`.
-This is the blocker under M-3, M-4, and per-trip scoping. Chroma metadata is
-schemaless so no Alembic migration is needed — but existing rows can't be
-backfilled with real timestamps, which is why M-1 leans rebuild.
+No `created_at`, `source`, or `trip_id`; rows are written with no metadata at
+all. This is the blocker under M-3, M-4, and per-trip scoping. Chroma metadata
+is schemaless so no Alembic migration is needed. Now cheaper than when this was
+written: M-1 emptied the collection, so there is nothing to backfill — new rows
+can carry metadata from the first write.
 
-Note `journals` and `saved_places` already do this correctly (18/18 and 27/27 rows
-carry `trip_id` and filter on it). Only `semantic` and `episodic` skipped it.
+Note `journals` and `saved_places` already do this correctly (both carry
+`trip_id` and filter on it). Only `semantic` and `episodic` skipped it.
 
-**Decision needed from you:** rebuild vs. backfill.
+### M-3 — Semantic near-duplicates will re-accumulate
 
-### M-3 — 129/289 preferences are semantic near-duplicates
-
-Paraphrases of the same few food traits. sha256 dedup can't touch these — they're
-distinct strings. Measured effect: retrieval diversity collapses to 2–3 distinct
-traits per 5 slots on food queries. Options are write-time embedding dedup
-(~0.88 cosine), periodic compaction, or a cap with LRU.
+Before the M-1 purge, 129/292 rows were paraphrases of the same few food traits,
+collapsing retrieval diversity to 2–3 distinct traits per 5 slots. sha256 dedup
+can't touch these — they're distinct strings — so the mechanism that produced
+them is unchanged and the cluster will rebuild over time. Options: write-time
+embedding dedup (~0.88 cosine), periodic compaction, or a cap with LRU.
 
 ### M-4 — Nothing reconciles contradictions or bounds growth
 
@@ -131,7 +136,7 @@ produced identical summaries. Lower severity than the preference case.
 
 ### M-8 — `/api/memories` returns every row unpaginated
 
-`app/routers/memories.py:14`. Merely ugly at 289 rows; scales linearly.
+`app/routers/memories.py:14`. Was merely ugly at 292 rows; scales linearly.
 
 ---
 
