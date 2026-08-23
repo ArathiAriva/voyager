@@ -43,6 +43,22 @@ Transient (exclude): "visited Kyoto in April 2024", "traveled to Barcelona for 3
 The episode summary is where trip-specific detail belongs — put it there, not in preferences."""
 
 
+# Strong references to in-flight extraction tasks. asyncio only holds a weak
+# reference to a running task, so a bare `create_task(...)` whose result nobody
+# keeps can be garbage-collected mid-await and vanish without ever raising --
+# the extraction simply never happens and nothing is logged. Journal entries
+# seeded in bulk (scripts/seed.py posts N entries then exits) are the case where
+# this bites: on the `egwene` profile, 12 journal entries produced 12 `journals`
+# rows but 0 `journal-` episodes. See B-1 / B-4 in OPEN-ITEMS.md.
+_extraction_tasks: set[asyncio.Task] = set()
+
+
+def _spawn_extraction(entry_id: str, trip_destination: str, body: str) -> None:
+    task = asyncio.create_task(_extract_journal_memory(entry_id, trip_destination, body))
+    _extraction_tasks.add(task)
+    task.add_done_callback(_extraction_tasks.discard)
+
+
 async def _extract_journal_memory(entry_id: str, trip_destination: str, body: str) -> None:
     try:
         client = get_client()
@@ -60,15 +76,27 @@ async def _extract_journal_memory(entry_id: str, trip_destination: str, body: st
                 raw = raw[4:]
             raw = raw.strip()
         if not raw:
+            logger.warning("journal | extraction returned empty content for entry=%s", entry_id[:8])
             return
         extracted = json.loads(raw)
         episode = extracted.get("episode", "").strip()
         preferences = [p for p in extracted.get("preferences", []) if p.strip()]
         if episode:
             mem.store_episode(f"journal-{entry_id}", episode)
+        else:
+            # Previously this returned quietly and the entry silently had no
+            # episode. An entry that produces no episode is a prompt/model
+            # problem worth seeing, not a normal outcome.
+            logger.warning(
+                "journal | extraction produced no episode for entry=%s (raw=%r)",
+                entry_id[:8], raw[:200],
+            )
         if preferences:
             mem.store_preferences(preferences)
-        logger.info("journal | memory extraction complete for entry=%s: 1 episode, %d preferences", entry_id[:8], len(preferences))
+        logger.info(
+            "journal | memory extraction complete for entry=%s: %d episode, %d preferences",
+            entry_id[:8], 1 if episode else 0, len(preferences),
+        )
     except Exception:
         logger.exception("journal | memory extraction failed for entry=%s (non-fatal)", entry_id[:8])
 
@@ -107,7 +135,7 @@ async def create_journal_entry(
     session.add(entry)
     await session.commit()
     await session.refresh(entry)
-    asyncio.create_task(_extract_journal_memory(entry.id, trip.destination, entry.body))
+    _spawn_extraction(entry.id, trip.destination, entry.body)
     mem.store_journal_entry(entry.id, trip_id, trip.destination, entry.date, entry.body)
     return entry
 
@@ -123,11 +151,19 @@ async def update_journal_entry(
     entry = await session.get(JournalEntryORM, entry_id)
     if not entry or entry.trip_id != trip_id:
         raise HTTPException(status_code=404, detail="Journal entry not found")
-    for field, value in body.model_dump(exclude_unset=True).items():
+    fields = body.model_dump(exclude_unset=True)
+    for field, value in fields.items():
         setattr(entry, field, value)
     await session.commit()
     await session.refresh(entry)
     mem.store_journal_entry(entry.id, trip_id, trip.destination, entry.date, entry.body)
+    if "body" in fields:
+        # Re-extract when the text changed, or the episode keeps describing the
+        # pre-edit entry. store_episode upserts on the same `journal-{id}` key,
+        # so this replaces rather than duplicates. Derived *preferences* are not
+        # revoked -- they have no back-reference to the entry that produced them
+        # (B-2 in OPEN-ITEMS.md); this fixes the episode half only.
+        _spawn_extraction(entry.id, trip.destination, entry.body)
     return entry
 
 

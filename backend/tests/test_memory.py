@@ -204,3 +204,42 @@ def test_search_saved_places_respects_n_results_after_filtering(isolated_places)
     hits = mem.search_saved_places("pasta", destination="Rome", n_results=3)
     assert len(hits) == 3
     assert all(h["destination"] == "Rome, Italy" for h in hits)
+
+
+# ── Journal extraction task lifetime (B-1) ──────────────────────────────────
+
+def test_spawn_extraction_keeps_a_strong_reference():
+    """B-1: a bare create_task can be GC'd mid-flight, losing the extraction
+    silently. _spawn_extraction must hold a reference until the task finishes."""
+    import asyncio
+    from app.routers import journal
+
+    started = asyncio.Event()
+    release = asyncio.Event()
+
+    async def fake_extract(entry_id, dest, body):
+        started.set()
+        await release.wait()
+
+    async def scenario():
+        original = journal._extract_journal_memory
+        journal._extract_journal_memory = fake_extract
+        # Other tests in the suite hit the journal API and leave their own
+        # extraction tasks in this module-global set, so assert on the delta
+        # rather than absolute size.
+        before = set(journal._extraction_tasks)
+        try:
+            journal._spawn_extraction("e1", "Rome", "body")
+            await started.wait()
+            # While in flight the task must be retained, or nothing keeps it alive.
+            added = set(journal._extraction_tasks) - before
+            assert len(added) == 1
+            release.set()
+            await asyncio.sleep(0)
+            await asyncio.sleep(0)
+            # ...and released once done, so the set can't grow without bound.
+            assert not (set(journal._extraction_tasks) & added)
+        finally:
+            journal._extract_journal_memory = original
+
+    asyncio.run(scenario())
