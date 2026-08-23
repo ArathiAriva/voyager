@@ -18,13 +18,21 @@ cd backend
 python -m evals.run                          # both planners, all cases (~30 LLM runs + 30 judge calls)
 python -m evals.run --planner multi          # one mode
 python -m evals.run --cases jp-7d,istanbul-3d
+python -m evals.run --judge-model openai/gpt-4o-mini   # vary the judge
 ```
+
+Cost note: the multi-agent graph is ~12 LLM calls per planning conversation (three
+researchers doing retrieve-then-synthesize, plus six single-shot nodes), versus 2-4 for
+the single-agent loop. A full `--planner both` run over 15 cases is therefore dominated
+by the `multi` half.
 
 ## Caveats
 
+- Backend failures (`event: error` in the SSE stream — bad or credit-exhausted API key, provider outage) are recorded as `backend error: <detail>`, not as `empty reply`, and skip judging. The distinction matters: "the planner produced nothing" is a quality result, "the backend never answered" is not.
 - The runner diffs `/api/trips` before/after each case and passes the persisted itinerary (if any) to the judge, so the reply + saved itinerary are judged as one deliverable. Don't run cases concurrently against the same backend, or the diff may attribute an itinerary to the wrong case.
 - For symmetry between confirm-before-save and auto-save planners: if nothing was persisted after the first reply, the runner sends one "yes, save it" follow-up turn and re-checks (`confirmation_turn_used` in results). `latency_s` measures the first (planning) turn only. Judged scores use the first reply + final persisted itinerary. Note: on `needs_info`-style cases (e.g. `vague-europe`) the confirmation turn is a wasted-but-harmless extra call.
-- Same judge model as the planner by default; pass `judge_model` in code or set `OPENROUTER_MODEL` differently to reduce self-preference bias.
+- **Judge defaults to the same model as the planner**, so scores carry self-preference bias. Pass `--judge-model <model>` to vary it; the generated `report.md` prints both models and warns when they match. Do not assume a different provider is automatically better: the safety suite's calibration (`evals/safety_judge_calibrate.py`) measured four judges against hand labels and found the cross-provider option was *substantially worse* (33% vs 80% agreement, and its errors inflated failure rates). The equivalent calibration has not been done for quality scoring — treat judge choice here as unmeasured.
+- Every result row and `manifest.json` records `agent_model` and `judge_model`. A `mean_score` is not interpretable without them, especially once per-node model choices vary.
 - Memory-dependent cases (`memory`, `saved-places` tags) score low on an unseeded profile — that's signal about the fixture, not the planner.
 - Runs are non-deterministic; for decisions, run 3x and compare means (variance is itself useful data).
 

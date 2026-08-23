@@ -5,11 +5,22 @@ Runs each golden case against the running Voyager backend via the real
 as in production), for one or both planner modes, judges every reply, and
 writes JSON results plus a markdown comparison report.
 
+Both planner architectures are supported and reported side by side, never pooled.
+The single-agent loop asks before persisting while the graph auto-saves, so when
+nothing was persisted the runner plays the cooperative user and confirms once
+(`confirmation_turn_used`) -- otherwise the comparison would penalise a planner
+for its UX rather than its plan.
+
+Every result records `agent_model` and `judge_model`; the judge defaults to the
+model under evaluation, which the report flags as a self-preference-bias caveat.
+Backend `event: error` frames are reported as such rather than as "empty reply".
+
 Usage (backend must be running, from backend/ dir):
 
     python -m evals.run                     # both planners, full golden set
     python -m evals.run --planner multi     # one planner
     python -m evals.run --cases jp-7d,lisbon-3d
+    python -m evals.run --judge-model openai/gpt-4o-mini
     python -m evals.run --base-url http://localhost:8060
 
 Results land in evals/results/<timestamp>/.
@@ -28,21 +39,37 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from evals.judge import DIMENSIONS, judge_reply
+from app.claude import get_model
 
 EVALS_DIR = Path(__file__).parent
 DEFAULT_BASE_URL = "http://localhost:8060"
 
 
-def _parse_sse(text: str) -> dict | None:
-    """Return the JSON payload of the final `done` event, or None."""
+def _parse_sse(text: str) -> tuple[dict | None, list[str]]:
+    """Return (done_payload, errors) from the SSE stream.
+
+    `errors` carries any `event: error` frames. Without this, a backend failure
+    (bad/exhausted API key, provider outage) yields no `done` event, the reply is
+    empty, and the run is recorded as the uninformative "empty reply" -- the real
+    cause is discarded. That misdiagnosis cost a debugging detour on the safety
+    suite on 2026-08-22, so surface it here instead of inferring it.
+    """
     done_data = None
     event = None
+    errors: list[str] = []
     for line in text.splitlines():
         if line.startswith("event: "):
             event = line[len("event: "):].strip()
-        elif line.startswith("data: ") and event == "done":
-            done_data = json.loads(line[len("data: "):])
-    return done_data
+        elif line.startswith("data: "):
+            payload = line[len("data: "):]
+            if event == "done":
+                done_data = json.loads(payload)
+            elif event == "error":
+                try:
+                    errors.append(json.loads(payload).get("detail", payload))
+                except json.JSONDecodeError:
+                    errors.append(payload)
+    return done_data, errors
 
 
 async def _trips_snapshot(client: httpx.AsyncClient) -> dict[str, list | None]:
@@ -60,7 +87,8 @@ def _diff_itinerary(before: dict, after: dict) -> tuple[str | None, list | None]
     return None, None
 
 
-async def run_case(client: httpx.AsyncClient, case: dict, planner: str) -> dict:
+async def run_case(client: httpx.AsyncClient, case: dict, planner: str,
+                   judge_model: str | None = None) -> dict:
     conv = (await client.post("/api/conversations")).json()
     trips_before = await _trips_snapshot(client)
     started = time.monotonic()
@@ -71,7 +99,7 @@ async def run_case(client: httpx.AsyncClient, case: dict, planner: str) -> dict:
     )
     latency = round(time.monotonic() - started, 1)
     r.raise_for_status()
-    done = _parse_sse(r.text)
+    done, sse_errors = _parse_sse(r.text)
     reply = (done or {}).get("content", "")
     trip_id, itinerary = _diff_itinerary(trips_before, await _trips_snapshot(client))
 
@@ -87,6 +115,8 @@ async def run_case(client: httpx.AsyncClient, case: dict, planner: str) -> dict:
             timeout=600,
         )
         r2.raise_for_status()
+        _, confirm_errors = _parse_sse(r2.text)
+        sse_errors += confirm_errors
         trip_id, itinerary = _diff_itinerary(trips_before, await _trips_snapshot(client))
 
     result = {
@@ -100,11 +130,23 @@ async def run_case(client: httpx.AsyncClient, case: dict, planner: str) -> dict:
         "trip_id": trip_id,
         "itinerary": itinerary,
         "confirmation_turn_used": confirmed,
-        "error": None if reply else "empty reply",
+        # Recorded per run so a score stays interpretable when models change:
+        # without these, "mean_score 4.2" cannot be attributed to a config later.
+        # judge_model resolves to the agent's own model unless --judge-model is
+        # passed, which is a self-preference-bias risk worth being able to see.
+        "agent_model": get_model(),
+        "judge_model": judge_model or get_model(),
+        # An infrastructure failure is reported as itself, not as "empty reply":
+        # the distinction is between "the planner produced nothing" (a real quality
+        # result) and "the backend never got to answer" (tells you nothing).
+        "error": (f"backend error: {sse_errors[0]}" if sse_errors
+                  else (None if reply else "empty reply")),
+        "sse_errors": sse_errors or None,
     }
-    if reply:
+    if reply and not sse_errors:
         try:
-            result["judgement"] = await judge_reply(case["prompt"], reply, itinerary=itinerary)
+            result["judgement"] = await judge_reply(case["prompt"], reply, itinerary=itinerary,
+                                                    judge_model=judge_model)
         except Exception as e:  # judge failure shouldn't sink the run
             result["error"] = f"judge failed: {e}"
     return result
@@ -123,6 +165,21 @@ def _summarize(results: list[dict]) -> dict:
 
 def _write_report(out_dir: Path, by_planner: dict[str, list[dict]]) -> None:
     lines = ["# Planner Evaluation Report", "", f"Generated: {datetime.now(timezone.utc).isoformat()}", ""]
+
+    # Which models produced these numbers -- a mean_score is not interpretable
+    # without them, especially once per-node model choices start varying.
+    any_run = next((r for rs in by_planner.values() for r in rs), {})
+    agent_model = any_run.get("agent_model")
+    judge_model = any_run.get("judge_model")
+    if agent_model:
+        lines += [f"Agent model: `{agent_model}`", "", f"Judge model: `{judge_model}`", ""]
+        if judge_model == agent_model:
+            lines += ["> **Caveat:** the judge is the same model being evaluated, so these",
+                      "> scores carry self-preference bias. Pass `--judge-model` to vary it.",
+                      "> (Note the safety suite's calibration found a *different*-provider judge",
+                      "> was measurably worse there, so 'different is better' is not automatic —",
+                      "> it needs measuring for quality scoring too.)", ""]
+
     summaries = {p: _summarize(rs) for p, rs in by_planner.items()}
 
     lines += ["## Summary", "", "| Metric | " + " | ".join(summaries) + " |",
@@ -148,6 +205,10 @@ async def main() -> None:
     ap.add_argument("--planner", choices=["single", "multi", "both"], default="both")
     ap.add_argument("--cases", help="comma-separated case ids (default: all)")
     ap.add_argument("--base-url", default=DEFAULT_BASE_URL)
+    ap.add_argument("--judge-model",
+                     help="model to score replies (default: OPENROUTER_MODEL, i.e. the "
+                          "same model being evaluated -- see the self-preference caveat "
+                          "in evals/README.md)")
     args = ap.parse_args()
 
     golden = json.loads((EVALS_DIR / "golden_set.json").read_text())["cases"]
@@ -166,9 +227,11 @@ async def main() -> None:
             for case in golden:
                 print(f"[{planner}] {case['id']} ...", flush=True)
                 try:
-                    result = await run_case(client, case, planner)
+                    result = await run_case(client, case, planner, args.judge_model)
                 except Exception as e:
-                    result = {"case_id": case["id"], "planner": planner, "error": str(e)}
+                    result = {"case_id": case["id"], "planner": planner, "error": str(e),
+                              "agent_model": get_model(),
+                              "judge_model": args.judge_model or get_model()}
                 score = result.get("judgement", {}).get("mean_score")
                 print(f"[{planner}] {case['id']} -> score={score} latency={result.get('latency_s')}s"
                       + (f" ERROR: {result['error']}" if result.get("error") else ""), flush=True)
@@ -176,6 +239,14 @@ async def main() -> None:
             by_planner[planner] = results
             (out_dir / f"{planner}.json").write_text(json.dumps(results, indent=2))
 
+    (out_dir / "manifest.json").write_text(json.dumps({
+        "generated": datetime.now(timezone.utc).isoformat(),
+        "agent_model": get_model(),
+        "judge_model": args.judge_model or get_model(),
+        "judge_is_agent_model": args.judge_model is None,
+        "planners": planners,
+        "case_ids": [c["id"] for c in golden],
+    }, indent=2))
     _write_report(out_dir, by_planner)
     print(f"\nResults written to {out_dir}")
     for p, rs in by_planner.items():
