@@ -373,8 +373,14 @@ async def _execute_save_place(args: dict, session: AsyncSession) -> str:
 
 
 async def _execute_search_places(args: dict, session: AsyncSession) -> str:
+    # `query` is schema-required, but models do omit it -- observed calling with
+    # only {"destination": "Porto"}. A missing arg must not 500 the whole
+    # conversation (KeyError propagated out of the tool loop and killed the
+    # turn), so fall back to a broad match and let the destination/category
+    # filters do the scoping.
+    query = (args.get("query") or "").strip() or "saved places"
     hits = memory.search_saved_places(
-        args["query"],
+        query,
         trip_id=args.get("trip_id"),
         category=args.get("category"),
         destination=args.get("destination"),

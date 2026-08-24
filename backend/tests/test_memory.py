@@ -243,3 +243,21 @@ def test_spawn_extraction_keeps_a_strong_reference():
             journal._extract_journal_memory = original
 
     asyncio.run(scenario())
+
+
+# ── search_places tolerates a missing `query` ───────────────────────────────
+
+def test_execute_search_places_without_query_does_not_raise(isolated_places):
+    """`query` is schema-required but models omit it -- observed a live call with
+    only {"destination": "Porto"}. A KeyError here propagated out of the tool
+    loop and 500'd the whole conversation, so the turn was lost entirely."""
+    import asyncio, json
+    import app.memory as mem
+    from app.tools import _execute_search_places
+
+    mem.store_saved_place("p1", "trip-porto", "Porto, Portugal", "Mercado do Bolhao",
+                          "restaurant", "Covered market with produce stalls.")
+
+    out = json.loads(asyncio.run(_execute_search_places({"destination": "Porto"}, None)))
+    assert "results" in out, out
+    assert [r["name"] for r in out["results"]] == ["Mercado do Bolhao"]
