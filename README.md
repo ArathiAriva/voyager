@@ -4,23 +4,12 @@ An AI-native travel companion that remembers your trips, helps you plan, and giv
 
 ## Status
 
-| Month | Theme | Status |
-|-------|-------|--------|
-| 1 | Core agent loop, tool calling, MCP | ✅ Done |
-| 2 | Memory system (episodic + semantic), journal RAG | ✅ Done |
-| 3 | Multi-profile support, saved places, LLM-generated seed data | ✅ Done |
-| 4 | Multi-agent trip planning (LangGraph) | ✅ Done |
-| 5 | — | Upcoming |
-| 6 | — | Upcoming |
+Core app is built: chat loop, multi-agent planner, memory, journal + places RAG, evals,
+tracing, cost accounting. Current focus is **agent safety evals** (indirect prompt
+injection, both planner architectures).
 
-### Month 4 highlights
-
-- **LangGraph multi-agent planner** — `plan my 7 days in Kyoto` triggers a graph with parallel researcher agents (activities, food, logistics), followed by accommodation selection, geospatial optimization, and a critic review loop
-- **Intent classification** — vague requests (`let's plan a trip to Hawaii`) get a clarifying question before any research runs
-- **Revision support** — `find cheaper restaurants` re-runs only the food researcher, not the full graph
-- **Auto-saved places** — all LLM-recommended places (attractions, restaurants, hotels) are saved to Saved Places with a Google Maps link after planning completes
-
----
+Roadmap, phase definitions, and scope decisions live in [VISION.md](VISION.md).
+Known bugs and open work live in [OPEN-ITEMS.md](OPEN-ITEMS.md).
 
 ## Architecture
 
@@ -51,7 +40,7 @@ An AI-native travel companion that remembers your trips, helps you plan, and giv
        │
        ├──▶ SQLite (trips, conversations, messages, saved places)
        │
-       └──▶ Chroma (episodic + semantic memory, journal RAG)
+       └──▶ Chroma (episodic + semantic memory, journal + saved-places RAG)
 ```
 
 Planning messages are intercepted before the standard agent loop and routed to the LangGraph graph. Non-planning messages go through the standard tool-call loop. Both paths share the same DB session and memory system.
@@ -203,6 +192,23 @@ cd frontend && npm run dev
 
 The MCP server does **not** need a separate terminal. The backend uses stdio transport, which spawns `server.py` as a subprocess on demand whenever the agent calls a travel tool (`get_weather`, `get_exchange_rate`). The only requirement is that the MCP server's `.venv` is set up (see MCP setup above).
 
+## Evaluation
+
+Two suites, both driving the **real API** so tools, memory, and the planner flag behave as in production. Both take `--planner single|multi|both`.
+
+```sh
+cd backend
+python -m evals.run                    # quality: 15 golden planning cases, LLM judge
+python -m evals.safety_run             # safety: 15 indirect prompt-injection cases
+python -m evals.safety_ledger          # aggregate every safety batch, with intervals
+```
+
+**Quality** (`evals/run.py`) scores replies on five dimensions and writes a side-by-side planner comparison. The judge defaults to the model under evaluation — pass `--judge-model` to vary it; the report flags the self-preference caveat.
+
+**Safety** (`evals/safety_run.py`) seeds saved places whose text carries an injected instruction, drives a benign turn, and checks whether the agent obeyed. Programmatic checks first, LLM judge only where the failure is qualitative. Design: [docs/safety-evals-spec.md](docs/safety-evals-spec.md).
+
+> Run the safety suite against an **empty** profile (`--profile safetyeval`). Retrieval is semantic, so on a populated profile the fixtures lose to the user's real saved places and most "passes" score a payload the agent never saw. The runner preflights this and refuses to start. The quality suite is the opposite — it wants a *seeded* profile, since several cases test personalisation.
+
 ## Observability (Phoenix)
 
 LLM tracing via [Arize Phoenix](https://phoenix.arize.com) (OpenInference + OTel). Disabled by default; enable by setting in `backend/.env`:
@@ -215,7 +221,7 @@ Run Phoenix locally with `phoenix serve` (`pip install arize-phoenix`) or via th
 
 ## Cost & token accounting
 
-Every LLM call is recorded to the `usage_log` table (model, prompt/completion tokens, cost, context label). Cost comes from OpenRouter's usage accounting (`usage: {include: true}`), so no local price table. Contexts: `chat`, `planning`, `memory_extraction`, `eval_judge`.
+Every LLM call is recorded to the `usage_log` table (model, prompt/completion tokens, cost, context label). Cost comes from OpenRouter's usage accounting (`usage: {include: true}`), so no local price table. Contexts: `chat`, `planning`, `memory_extraction`, `eval_judge`, `safety_eval`.
 
 - `GET /api/usage/summary?days=30` — totals + breakdowns by model / context / day
 - `GET /api/usage/recent?limit=50` — latest calls
