@@ -19,7 +19,7 @@ Alembic, in `backend/alembic/versions/`. Run with `bash scripts/migrate.sh` (bac
 
 ## Chroma
 
-See [memory.md](memory.md) — collections `episodic`, `semantic`, `journals`, plus place embeddings. Persisted per profile in `backend/chroma_db/`.
+See [memory.md](memory.md) — collections `episodic` (conversations *and* journal entries, the latter keyed `journal-{entry_id}`), `semantic`, `journals`, and `saved_places` (metadata carries `trip_id`, `destination`, `name`, `category` — `destination` is what scopes planner retrieval). Persisted per profile; path from `CHROMA_PATH`.
 
 ## Profiles
 

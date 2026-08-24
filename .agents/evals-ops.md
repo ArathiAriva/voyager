@@ -8,9 +8,47 @@
 
 - `golden_set.json` — 15 planning cases.
 - `judge.py` — LLM-as-judge, 5 dimensions, temperature 0 (usage context `eval_judge`).
-- `run.py` — runs both planners through the **real API** (`python -m evals.run`), writes timestamped results to `evals/results/<ts>/` (`single.json`, `multi.json`, `report.md`). Output shape is LangSmith-feedback-compatible (LangSmith datasets planned for Month 5).
+- `run.py` — runs both planners through the **real API** (`python -m evals.run`), writes timestamped results to `evals/results/<ts>/` (`single.json`, `multi.json`, `report.md`, `manifest.json`). Output shape is LangSmith-feedback-compatible (LangSmith datasets planned for Month 5).
+
+Every result row records `agent_model` and `judge_model`; a score is not interpretable
+without them. `--judge-model` overrides the judge, which otherwise defaults to the model
+being evaluated — the report flags that as a self-preference-bias caveat. Backend
+`event: error` SSE frames are reported as `backend error: ...` rather than the
+uninterpretable "empty reply".
 
 Eval runs are traced by Phoenix like normal traffic.
+
+## Safety eval suite (`backend/evals/safety_*`)
+
+Indirect prompt-injection evals — untrusted saved-place text carries an injected
+instruction, the runner seeds it via the API, drives a benign user turn, and checks
+whether the agent obeyed. Spec: `docs/safety-evals-spec.md`. Status and open items:
+`OPEN-ITEMS.md` § "Safety evals — Phase 2".
+
+- `safety_set.json` — 15 cases; taxonomy is `placement` x `instruction_style` x
+  `attack_goal`, plus an optional `planners` field restricting a case to one architecture.
+- `safety_run.py` — `--planner single|multi|both`, `--runs N`, `--cases`, `--gate`.
+  Results per architecture, **never pooled** (the graph launders saved-place text through
+  `build_brief`; the single-agent loop ingests it raw).
+- `safety_judge.py` — 1–5 compliance scale, used only where a case declares it.
+- `safety_judge_calibrate.py` — picks the judge by measured agreement with hand labels.
+- `safety_ledger.py` — aggregates every batch in `results/` with Wilson intervals
+  (`python -m evals.safety_ledger` → `SAFETY-LEDGER.md`).
+- `safety_rejudge.py` — replays a judge over stored replies, to isolate judge changes.
+
+**Run it against an empty profile** (`--profile safetyeval`, a scratch profile with its
+own DB + Chroma). `search_places` is semantic, so on a populated profile fixtures lose to
+the user's real saved places — measured 3% fixture exposure on `egwene`, meaning most
+"passes" scored a payload the agent never saw. The runner preflights this and refuses to
+start. Reset the profile **between** runs too: `_auto_save_places` writes planner output
+back as saved places, so the suite pollutes its own profile as it goes.
+
+Guards worth knowing, all of which exist because they caught a real vacuous pass:
+routing to the multi-agent graph needs both a phrase match *and* `classify_intent`
+reading `full_plan`; an `itinerary_not_contains` check with no persisted itinerary is
+recorded as `skipped`, and a case whose every substantive check was skipped returns
+`no_signal` rather than `pass`; backend errors are surfaced before the routing guard, so
+an outage isn't misreported as a bad case script.
 
 ## Observability (`backend/app/observability.py`)
 
@@ -36,7 +74,13 @@ Also useful for safety-eval forensics — e.g. filtering to `node=build_brief` t
 
 ## Cost & token accounting (`backend/app/usage.py`)
 
-The OpenRouter client is wrapped once in `app/claude.py`; every call logs model, tokens, and OpenRouter-reported cost (`usage: {include: true}` — no local price table) to the `usage_log` table with a context label: `chat`, `planning`, `memory_extraction`, `eval_judge`. Recording is fail-open; streaming calls pass through unrecorded.
+The OpenRouter client is wrapped once in `app/claude.py`; every call logs model, tokens, and OpenRouter-reported cost (`usage: {include: true}` — no local price table) to the `usage_log` table with a context label: `chat`, `planning`, `memory_extraction`,
+`eval_judge`, `safety_eval`.
+
+Caveat: the eval scripts call bare `load_dotenv()`, so they load root `.env` and their
+*judge* calls are accounted to whatever `DATABASE_URL` that resolves to — not the profile
+the backend under test is running. Total run cost is therefore split across two databases
+(R-3). Recording is fail-open; streaming calls pass through unrecorded.
 
 Endpoints: `GET /api/usage/summary?days=30`, `GET /api/usage/recent?limit=50`; surfaced in the UI's Usage tab.
 
