@@ -14,12 +14,13 @@ Severity is about consequence if left alone, not effort to fix.
 
 ## Priority right now
 
-1. **B-4** — same GC defect that caused B-1, still live in `conversations.py:370`, on the
-   higher-traffic path. Known fix to copy. *(bug, ~30 min)*
-2. **S-1b** — run the safety suite properly (n≥3, both architectures). Everything built
+1. **S-1b** — run the safety suite properly (n≥3, both architectures). Everything built
    over the last stretch is currently unmeasured. *(~$4, needs key balance)*
-3. **S-13** — calibrate the quality judge. Gates any per-node model decision, since that
+2. **S-13** — calibrate the quality judge. Gates any per-node model decision, since that
    verdict would rest entirely on an unmeasured judge. *(~15 hand labels)*
+3. **Retrieval instrumentation** — `retrieval_log` + returning IDs/distances from
+   `search_memory`. No labels, no LLM calls, and it is what would have caught B-6 and S-7.
+   See [docs/retrieval-quality-spec.md](docs/retrieval-quality-spec.md). *(Phase 4)*
 4. **B-7 / B-3** — small user-facing 500; 5 red tests masking regressions.
 5. **R-1..R-3** — refactors. R-3 (cost split across two DBs) has the most consequence.
 
@@ -72,17 +73,26 @@ renamed without updating the patch target.
 
 **Severity:** low, but it's 5 red tests masking real regressions in that module.
 
-### B-4 — Memory extraction is fire-and-forget with no backpressure
+### ~~B-4 — Memory extraction is fire-and-forget with no backpressure~~ · **fixed 2026-08-23**
 
-`conversations.py:370` spawns an unawaited `asyncio.create_task` per exchange and
-retains no reference — under CPython the task can be garbage-collected mid-flight.
-Nothing bounds concurrency. Failures are logged and dropped
-(`conversations.py:118-119`).
+Same defect class as B-1, on the higher-traffic path. Two unreferenced
+`asyncio.create_task` calls in `conversations.py` (the planning-graph reply and the
+standard tool-loop reply) could be garbage-collected mid-await, losing the extraction
+with no exception and no log line. The third `create_task` in that file (line ~262,
+`run_graph`) is awaited and was never at risk.
 
-**Severity:** low now, real under load. **This is confirmed, not speculative** — the
-identical pattern in `journal.py` was the root cause of B-1 (episodes silently never
-written). The fix there was a module-global set holding strong references until
-completion; apply the same here, plus a bound on concurrency.
+Both now go through `_spawn_extraction`, which retains a strong reference until the task
+completes — the same fix applied to `journal.py` for B-1.
+
+Backpressure added too: extraction runs under an `asyncio.Semaphore(4)`. Every chat
+exchange spawns one of these and each makes an LLM call; nothing previously bounded how
+many ran at once. Background work should queue, not stampede.
+
+Two tests in `tests/test_memory.py` — one asserts the in-flight task is retained and
+released, one asserts the concurrency cap holds. The cap test was verified to *fail*
+when the semaphore is removed, so it tests the mechanism rather than passing vacuously.
+
+Verified live: a chat turn produced 1 episode + 2 preferences in Chroma.
 
 ### ~~B-6 — Planner retrieves saved places from every trip, unscoped~~ · **fixed 2026-08-22**
 

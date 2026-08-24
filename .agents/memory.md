@@ -25,9 +25,14 @@ Two sources feed `episodic` + `semantic`, both via background LLM passes (usage 
 result nobody keeps can be garbage-collected mid-await — no exception, no log, the write
 simply never happens. This was B-1: 12 journal entries produced 12 `journals` rows and 0
 `journal-` episodes, with nothing in the logs to explain it. `journal.py` now holds tasks
-in a module-global set until completion (`_spawn_extraction`); `conversations.py:370` has
-the same pattern still unfixed (B-4). `scripts/backfill_journal_memory.py` repairs
+in a module-global set until completion (`_spawn_extraction`), and `conversations.py`
+does the same for both of its extraction call sites (B-4). Conversation extraction also
+runs under an `asyncio.Semaphore(4)` — every exchange spawns one and each makes an LLM
+call, so it queues rather than stampedes. `scripts/backfill_journal_memory.py` repairs
 profiles affected by the original bug.
+
+**Spawn background extraction via the module's `_spawn_extraction` helper, never
+`asyncio.create_task` directly.**
 
 ## Retrieval
 

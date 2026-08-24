@@ -261,3 +261,74 @@ def test_execute_search_places_without_query_does_not_raise(isolated_places):
     out = json.loads(asyncio.run(_execute_search_places({"destination": "Porto"}, None)))
     assert "results" in out, out
     assert [r["name"] for r in out["results"]] == ["Mercado do Bolhao"]
+
+
+# ── Conversation extraction task lifetime + concurrency (B-4) ───────────────
+
+def test_conversation_spawn_extraction_keeps_a_strong_reference():
+    """B-4: same defect class as B-1. A bare create_task can be GC'd mid-await,
+    losing the extraction with no error. The task must be retained until done."""
+    import asyncio
+    from app.routers import conversations as conv
+
+    started = asyncio.Event()
+    release = asyncio.Event()
+
+    async def fake_extract(conversation_id, history):
+        started.set()
+        await release.wait()
+
+    async def scenario():
+        original = conv._extract_and_store_memory
+        conv._extract_and_store_memory = fake_extract
+        before = set(conv._extraction_tasks)
+        try:
+            conv._spawn_extraction("c1", [])
+            await started.wait()
+            added = set(conv._extraction_tasks) - before
+            assert len(added) == 1
+            release.set()
+            await asyncio.sleep(0)
+            await asyncio.sleep(0)
+            assert not (set(conv._extraction_tasks) & added)
+        finally:
+            conv._extract_and_store_memory = original
+
+    asyncio.run(scenario())
+
+
+def test_conversation_extraction_is_concurrency_bounded():
+    """B-4's other half: every exchange spawns an LLM-calling extraction, and
+    nothing bounded how many ran at once. Background work should queue."""
+    import asyncio
+    from app.routers import conversations as conv
+
+    async def scenario():
+        peak = 0
+        live = 0
+        release = asyncio.Event()
+
+        async def fake_run(conversation_id, history):
+            nonlocal peak, live
+            live += 1
+            peak = max(peak, live)
+            await release.wait()
+            live -= 1
+
+        original = conv._run_extraction
+        conv._run_extraction = fake_run
+        try:
+            tasks = [
+                asyncio.create_task(conv._extract_and_store_memory(f"c{i}", []))
+                for i in range(conv._EXTRACTION_CONCURRENCY + 3)
+            ]
+            # Let everything that can start, start.
+            for _ in range(10):
+                await asyncio.sleep(0)
+            assert peak <= conv._EXTRACTION_CONCURRENCY, f"peak={peak}"
+            release.set()
+            await asyncio.gather(*tasks)
+        finally:
+            conv._run_extraction = original
+
+    asyncio.run(scenario())

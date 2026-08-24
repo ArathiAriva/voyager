@@ -80,8 +80,41 @@ Transient (exclude): "planning a 7-day trip", "currently in Rome", "traveling in
 The episode summary is where trip-specific detail belongs — put it there, not in preferences."""
 
 
+# Strong references to in-flight extraction tasks, plus a concurrency bound.
+#
+# asyncio holds only a weak reference to a running task, so a bare
+# `create_task(...)` whose result nobody keeps can be garbage-collected
+# mid-await and vanish -- no exception, no log line, the extraction simply never
+# happens. That is not theoretical: the identical pattern in journal.py was the
+# root cause of B-1 (12 journal entries, 12 `journals` rows, 0 episodes, nothing
+# in the logs to explain it).
+#
+# The semaphore is the other half of B-4: every chat exchange spawns one of
+# these, each making an LLM call, and nothing previously bounded how many ran at
+# once. Extraction is background work -- it should queue, not stampede.
+_extraction_tasks: set[asyncio.Task] = set()
+_EXTRACTION_CONCURRENCY = 4
+_extraction_semaphore = asyncio.Semaphore(_EXTRACTION_CONCURRENCY)
+
+
+def _spawn_extraction(conversation_id: str, history: list[dict]) -> None:
+    """Start a background memory extraction, retaining a reference until it finishes."""
+    task = asyncio.create_task(_extract_and_store_memory(conversation_id, history))
+    _extraction_tasks.add(task)
+    task.add_done_callback(_extraction_tasks.discard)
+
+
 async def _extract_and_store_memory(conversation_id: str, history: list[dict]) -> None:
-    """Fire-and-forget: extract episode + preferences from the conversation and store in Chroma."""
+    """Background: extract episode + preferences from the conversation and store in Chroma.
+
+    Spawn via `_spawn_extraction`, never `asyncio.create_task` directly -- see the
+    note above on why a bare task can silently disappear.
+    """
+    async with _extraction_semaphore:
+        await _run_extraction(conversation_id, history)
+
+
+async def _run_extraction(conversation_id: str, history: list[dict]) -> None:
     try:
         usage_context.set("memory_extraction")
         client = get_client()
@@ -253,9 +286,9 @@ async def send_message(
                 conversation.updated_at = datetime.now(timezone.utc)
                 await session.commit()
                 await session.refresh(reply_msg)
-                asyncio.create_task(_extract_and_store_memory(
+                _spawn_extraction(
                     conversation_id, history + [{"role": "assistant", "content": planning_reply}]
-                ))
+                )
                 from app.models.conversation import Message as MessageSchema
                 msg_out = MessageSchema(
                     id=reply_msg.id, role=reply_msg.role,
@@ -367,7 +400,7 @@ async def send_message(
         await session.commit()
         await session.refresh(reply_msg)
 
-        asyncio.create_task(_extract_and_store_memory(conversation_id, history))
+        _spawn_extraction(conversation_id, history)
 
         from app.models.conversation import Message as MessageSchema
         msg_out = MessageSchema(
