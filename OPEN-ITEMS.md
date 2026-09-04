@@ -24,8 +24,8 @@ Severity is about consequence if left alone, not effort to fix.
 > decisions and belongs to the product track.
 
 1. **Product flow** — the chat→trip→itinerary path is the current focus. B-9, B-10 and
-   B-11 (delete confirmation, trip duplication, lost enrichment) are fixed as of
-   2026-09-03; **B-7** is the next defect in that flow.
+   B-11 (delete confirmation, trip duplication, lost enrichment) and B-7 (places
+   endpoint 500) are all fixed as of 2026-09-03. **B-3** (5 red tests) is next.
 2. **S-13** — calibrate the quality judge. Gates any per-node model decision, since that
    verdict would rest entirely on an unmeasured judge. *(~15 hand labels)*
 3. **Retrieval instrumentation** — `retrieval_log` + returning IDs/distances from
@@ -146,13 +146,26 @@ Plausibly self-inflicted: B-6 added "ALWAYS pass `destination`" to the tool desc
 which may have nudged the model toward destination-only calls. Worth remembering that
 prompt changes shift *which* malformed calls you get.
 
-### B-7 — `GET /trips/{id}/places` 500s on out-of-enum categories
+### ~~B-7 — `GET /trips/{id}/places` 500s on out-of-enum categories~~ · **fixed 2026-09-03**
 
 Rows with `category='street food'` fail the `list[SavedPlace]` response model
 (`places.py:129`), so the endpoint 500s for the whole trip. Present on `egwene`'s Tokyo
 trip. The write path that created them did not enforce the enum the read path demands.
-Either widen the enum, coerce on read, or clean the rows — but the mismatch itself is
-the bug.
+**Fixed** by closing the mismatch at both ends rather than picking one. `street food` is
+a legitimate category the model reasonably chose, so the enum now includes it — which
+makes the six existing `egwene` rows valid with no data migration (verified: that
+endpoint returned 200 with all 21 places after the change, having 500'd before).
+
+The root cause was two write paths that bypassed the schema: LLM extraction
+(`places.py:130`) and `save_place` tool args (`tools.py:382`) both assigned `category`
+straight from unvalidated input. Both now run it through `coerce_category`, which
+normalises case and underscores and falls back to `other`. `POST /places` was always safe
+— Pydantic validated it.
+
+The list had also been copy-pasted into six places (two tool schemas, the extraction
+prompt, a frontend type, a picker, two icon maps). `PLACE_CATEGORIES` in
+`app/models/trip.py` is now the source of truth and the tool schemas derive from it; a
+test asserts they cannot drift. The frontend keeps a mirrored copy with a sync comment.
 
 ### ~~B-11 — Place enrichment uses a bare `create_task`~~ · **fixed 2026-09-03**
 

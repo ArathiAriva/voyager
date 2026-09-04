@@ -1,6 +1,6 @@
 from datetime import datetime
 from pydantic import BaseModel
-from typing import Literal
+from typing import Literal, get_args
 
 
 class ItineraryDay(BaseModel):
@@ -91,7 +91,30 @@ class ConnectedContent(ConnectedContentBase):
 
 # ── Saved places ─────────────────────────────────────────────────────────────
 
-PlaceCategory = Literal["restaurant", "cafe", "bar", "hotel", "neighbourhood", "attraction", "shop", "beach", "other"]
+PlaceCategory = Literal[
+    "restaurant", "cafe", "bar", "street food", "hotel",
+    "neighbourhood", "attraction", "shop", "beach", "other",
+]
+
+#: The single source of truth for valid categories. The read path validates against
+#: PlaceCategory, so any write path that bypasses it can persist a row the API cannot
+#: serialise -- that mismatch was B-7. Use `coerce_category` on unvalidated input.
+PLACE_CATEGORIES: tuple[str, ...] = get_args(PlaceCategory)
+
+
+def coerce_category(value: str | None) -> str:
+    """Map free-text category input onto the enum, falling back to 'other'.
+
+    LLM-extracted and tool-supplied categories are not schema-checked, so they can be
+    anything ('street food', 'Restaurant', 'ramen shop'). Coercing on write keeps the
+    table readable by the response model.
+    """
+    if not value:
+        return "other"
+    normalised = value.strip().lower().replace("_", " ")
+    if normalised in PLACE_CATEGORIES:
+        return normalised
+    return "other"
 
 
 class SavedPlaceBase(BaseModel):

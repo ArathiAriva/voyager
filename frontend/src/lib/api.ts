@@ -247,7 +247,15 @@ export async function deleteContent(tripId: string, contentId: string): Promise<
 
 // ── Saved places ─────────────────────────────────────────────────────────────
 
-export type PlaceCategory = "restaurant" | "cafe" | "bar" | "hotel" | "neighbourhood" | "attraction" | "shop" | "beach" | "other";
+export type PlaceCategory =
+  | "restaurant" | "cafe" | "bar" | "street food" | "hotel"
+  | "neighbourhood" | "attraction" | "shop" | "beach" | "other";
+
+/** Mirrors PLACE_CATEGORIES in backend/app/models/trip.py -- keep in sync. */
+export const PLACE_CATEGORIES: PlaceCategory[] = [
+  "restaurant", "cafe", "bar", "street food", "hotel",
+  "neighbourhood", "attraction", "shop", "beach", "other",
+];
 
 export interface SavedPlace {
   id: string;

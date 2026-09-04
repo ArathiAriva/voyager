@@ -14,7 +14,7 @@ from app.claude import get_client, get_model
 from app.db import SessionLocal, get_session
 from app import memory
 from app.models.orm import TripORM, SavedPlaceORM
-from app.models.trip import SavedPlace, SavedPlaceCreate, SavedPlaceUpdate
+from app.models.trip import SavedPlace, SavedPlaceCreate, SavedPlaceUpdate, coerce_category
 from app.utils import fetch_og_metadata
 
 logger = logging.getLogger("voyager.places")
@@ -29,7 +29,7 @@ extract structured information and respond with JSON only — no prose, no code 
   "name": "Official name of the place",
   "address": "Full street address if present, else null",
   "area": "Neighbourhood or district name (e.g. 'Shinjuku', 'Le Marais', 'Shoreditch'). Infer from address or context if not explicit. Null if unknown.",
-  "category": "One of: restaurant, cafe, bar, hotel, neighbourhood, attraction, shop, beach, other",
+  "category": "One of: restaurant, cafe, bar, street food, hotel, neighbourhood, attraction, shop, beach, other",
   "summary": "2-3 sentences describing what makes this place worth visiting. Focus on atmosphere, specialities, and practical details a traveller would want."
 }
 
@@ -125,7 +125,9 @@ async def _run_enrichment(place_id: str, url: str, destination: str) -> None:
             if extracted.get("area") and not place.area:
                 place.area = extracted["area"]
             if extracted.get("category"):
-                place.category = extracted["category"]
+                # B-7: the model returns free text here; coerce so the row stays
+                # readable by the `list[SavedPlace]` response model.
+                place.category = coerce_category(extracted["category"])
             if extracted.get("summary"):
                 place.summary = extracted["summary"]
             place.enrichment_status = "done"

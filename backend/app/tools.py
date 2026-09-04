@@ -15,6 +15,7 @@ from datetime import datetime, timezone
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.orm import TripORM
+from app.models.trip import PLACE_CATEGORIES, coerce_category
 from app.utils import dest_matches
 from app import memory
 
@@ -170,7 +171,7 @@ TOOL_SCHEMAS = [
                     "url": {"type": "string", "description": "URL for the place (website, Google Maps, blog post). Always include this if you have it — the app uses it to fetch a thumbnail image and enrich the place details automatically."},
                     "category": {
                         "type": "string",
-                        "enum": ["restaurant", "cafe", "bar", "hotel", "neighbourhood", "attraction", "shop", "beach", "other"],
+                        "enum": list(PLACE_CATEGORIES),
                     },
                     "area": {"type": "string", "description": "Neighbourhood or district name (e.g. 'Shinjuku', 'Le Marais'). Used for clustering places geographically."},
                     "address": {"type": "string", "description": "Street address if known."},
@@ -200,7 +201,7 @@ TOOL_SCHEMAS = [
                     "destination": {"type": "string", "description": "Optional: restrict to places saved for one destination, e.g. 'Rome' or 'Rome, Italy'."},
                     "category": {
                         "type": "string",
-                        "enum": ["restaurant", "cafe", "bar", "hotel", "neighbourhood", "attraction", "shop", "beach", "other"],
+                        "enum": list(PLACE_CATEGORIES),
                         "description": "Optional: filter by place type.",
                     },
                 },
@@ -378,7 +379,7 @@ async def _execute_save_place(args: dict, session: AsyncSession) -> str:
         trip_id=trip_id,
         name=args["name"],
         url=url,
-        category=args.get("category", "other"),
+        category=coerce_category(args.get("category")),
         area=args.get("area"),
         address=args.get("address"),
         notes=args.get("notes"),

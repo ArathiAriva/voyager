@@ -13,7 +13,7 @@ import {
   fetchContent, addContent, deleteContent, updateTrip,
   fetchPlaces, createPlace, deletePlace,
   type Trip, type JournalEntry, type ConnectedContent, type TripUpdate, type ItineraryDay,
-  type SavedPlace, type PlaceCategory,
+  type SavedPlace, type PlaceCategory, PLACE_CATEGORIES,
 } from "@/lib/api";
 
 type Tab = "journal" | "itinerary" | "places" | "content";
@@ -639,7 +639,7 @@ export default function TripDetailPage() {
                 <Box>
                   <Text fontSize="sm" fontWeight="medium" mb={2} color="text.secondary">Category</Text>
                   <HStack gap={2} flexWrap="wrap">
-                    {(["restaurant", "cafe", "bar", "hotel", "neighbourhood", "attraction", "shop", "beach", "other"] as PlaceCategory[]).map((cat) => (
+                    {PLACE_CATEGORIES.map((cat) => (
                       <Button
                         key={cat}
                         size="xs"
@@ -688,7 +688,7 @@ export default function TripDetailPage() {
             {places.map((place) => {
               const categoryEmoji: Record<string, string> = {
                 restaurant: "🍽️", cafe: "☕", bar: "🍸", hotel: "🏨",
-                neighbourhood: "🏘️", attraction: "🎭", shop: "🛍️", beach: "🏖️", other: "📍",
+                "street food": "🍢", neighbourhood: "🏘️", attraction: "🎭", shop: "🛍️", beach: "🏖️", other: "📍",
               };
               const emoji = categoryEmoji[place.category] ?? "📍";
               return (
@@ -913,7 +913,7 @@ export default function TripDetailPage() {
                 <Flex h="140px" align="center" justify="center" bg="bg.subtle" fontSize="5xl">
                   {({
                     restaurant: "🍽️", cafe: "☕", bar: "🍸", hotel: "🏨",
-                    neighbourhood: "🏘️", attraction: "🎭", shop: "🛍️", beach: "🏖️", other: "📍",
+                    "street food": "🍢", neighbourhood: "🏘️", attraction: "🎭", shop: "🛍️", beach: "🏖️", other: "📍",
                   } as Record<string, string>)[selectedPlace.category] ?? "📍"}
                 </Flex>
               )}

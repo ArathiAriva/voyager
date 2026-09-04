@@ -146,3 +146,56 @@ async def test_create_trip_tool_allows_different_destination(db_session):
     await _create_via_tool(db_session)
     second = await _create_via_tool(db_session, destination="Kyoto, Japan")
     assert second["action"] == "trip_created"
+
+
+# ── place category enum vs. write paths (B-7) ───────────────────────────────
+
+def test_coerce_category_maps_free_text_onto_the_enum():
+    """B-7: LLM extraction and save_place args are not schema-checked, so they could
+    write a category the `list[SavedPlace]` response model cannot serialise -- which
+    500'd GET /trips/{id}/places for the whole trip."""
+    from app.models.trip import coerce_category, PLACE_CATEGORIES
+
+    assert "street food" in PLACE_CATEGORIES
+    assert coerce_category("street food") == "street food"
+    assert coerce_category("Street Food") == "street food"
+    assert coerce_category("street_food") == "street food"
+    assert coerce_category("ramen shop") == "other"
+    assert coerce_category(None) == "other"
+    assert coerce_category("") == "other"
+
+
+def test_tool_schema_enums_track_the_category_source_of_truth():
+    """The save_place / search_places schemas used to hardcode the list, so widening
+    the enum would silently leave them stale."""
+    from app.models.trip import PLACE_CATEGORIES
+    from app.tools import TOOL_SCHEMAS
+
+    found = 0
+    for tool in TOOL_SCHEMAS:
+        props = tool["function"].get("parameters", {}).get("properties", {})
+        enum = props.get("category", {}).get("enum")
+        if enum:
+            found += 1
+            assert tuple(enum) == PLACE_CATEGORIES
+    assert found == 2
+
+
+async def test_places_endpoint_serves_every_valid_category(client: AsyncClient):
+    """A row in any valid category must not break the listing for the whole trip."""
+    trip = await client.post("/api/trips", json={
+        "destination": "Bangkok, Thailand", "dates": "Jan 2026",
+        "status": "upcoming", "emoji": "🇹🇭",
+    })
+    trip_id = trip.json()["id"]
+
+    from app.models.trip import PLACE_CATEGORIES
+    for i, category in enumerate(PLACE_CATEGORIES):
+        resp = await client.post(f"/api/trips/{trip_id}/places", json={
+            "name": f"Place {i}", "category": category,
+        })
+        assert resp.status_code == 201, (category, resp.text)
+
+    listing = await client.get(f"/api/trips/{trip_id}/places")
+    assert listing.status_code == 200, listing.text
+    assert len(listing.json()) == len(PLACE_CATEGORIES)
