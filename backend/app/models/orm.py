@@ -98,6 +98,34 @@ class MessageORM(Base):
     conversation: Mapped["ConversationORM"] = relationship("ConversationORM", back_populates="messages")
 
 
+class RetrievalLogORM(Base):
+    """One row per vector-search call — the retrieval counterpart to `usage_log`.
+
+    Voyager is a RAG app whose retrieval layer was entirely unmeasured: both eval
+    suites judge the final reply, so they cannot separate "the retriever missed it"
+    from "the LLM ignored it". Two silent retrieval failures (B-6, S-7) were found by
+    accident reading tool-call logs. See docs/retrieval-quality-spec.md.
+    """
+    __tablename__ = "retrieval_log"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
+    #: saved_places / episodic / semantic / journals
+    collection: Mapped[str] = mapped_column(String, nullable=False)
+    query: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    #: filters actually applied (destination / trip_id / category), JSON object
+    filters: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+    n_requested: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    n_returned: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    #: stable Chroma IDs, so a result stays auditable after the fact
+    result_ids: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    #: similarity scores; Chroma returns these on every query and they were discarded
+    distances: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    #: usage_context + node_context, e.g. "planning:food_researcher"
+    caller: Mapped[str] = mapped_column(String, nullable=False, default="unspecified")
+    latency_ms: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+
+
 class UsageLogORM(Base):
     """One row per LLM API call — token counts and OpenRouter-reported cost."""
     __tablename__ = "usage_log"

@@ -1,6 +1,6 @@
 # Spec: Retrieval Quality Monitoring
 
-**Status:** Draft for review
+**Status:** Steps 1–3 implemented 2026-09-03; step 4 (labelled golden set) outstanding
 **Owner:** Arathi
 **Created:** 2026-08-23
 **Context:** Voyager is a RAG app whose retrieval layer is entirely unmeasured. This
@@ -142,12 +142,21 @@ nothing. That lesson is already paid for; do not re-learn it here.
 
 ## Build order
 
-1. **`retrieval_log` + instrumentation in `memory.py`** — the observability half.
-   Valuable immediately, no labels required.
-2. **Return IDs + distances from `search_memory`** — small, contained, prerequisite.
-3. **`GET /api/retrieval/summary`** — zero-rate and distance percentiles per collection,
-   surfaced alongside the existing Usage tab.
-4. **Golden set + `evals/retrieval_run.py`** — the correctness half.
+1. ~~**`retrieval_log` + instrumentation in `memory.py`**~~ — **done.** All four
+   collections (`saved_places`, `episodic`, `semantic`, `journals`), including the
+   zero-count early returns, so the zero-result rate is real. Written fail-open from
+   `app/retrieval.py`; `saved_places` logs *post-filter* hits, since the destination
+   scope is applied after the vector query and is exactly what B-6 got wrong.
+2. ~~**Return IDs + distances from `search_memory`**~~ — **done.** Added as
+   `episode_hits` / `preference_hits`; the plain lists stay for existing callers, and
+   `_execute_search_memory` strips the hits so they don't spend model context.
+3. ~~**`GET /api/retrieval/summary`**~~ — **done**, plus `/api/retrieval/recent` for
+   eyeballing what a bad number means. The frontend view beside the Usage tab is *not*
+   built.
+4. **Golden set + `evals/retrieval_run.py`** — the correctness half. Still outstanding.
+
+**Retention decision (open question above):** log everything, no cap — matching
+`usage_log`. Revisit with real row counts rather than pre-building a pruning mechanism.
 
 Steps 1–3 deliberately precede 4: live data tells you *which* queries deserve labels, so
 you write 20 useful cases instead of 30 guessed ones.

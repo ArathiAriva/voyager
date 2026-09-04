@@ -29,9 +29,13 @@ Severity is about consequence if left alone, not effort to fix.
    the retrieval instrumentation.
 2. **S-13** — calibrate the quality judge. Gates any per-node model decision, since that
    verdict would rest entirely on an unmeasured judge. *(~15 hand labels)*
-3. **Retrieval instrumentation** — `retrieval_log` + returning IDs/distances from
-   `search_memory`. No labels, no LLM calls, and it is what would have caught B-6 and S-7.
-   See [docs/retrieval-quality-spec.md](docs/retrieval-quality-spec.md). *(Phase 4)*
+3. **Retrieval instrumentation** — spec steps 1–3 **done 2026-09-03**: `retrieval_log`
+   (all four collections), IDs/distances from `search_memory`, and
+   `GET /api/retrieval/summary` + `/recent`. Remaining: **step 4**, the labelled golden
+   set (`evals/retrieval_set.json` + `retrieval_run.py`, recall@k / precision@k / MRR).
+   The spec defers it deliberately — live data tells you which queries deserve labels.
+   Also unbuilt: a frontend view beside the Usage tab.
+   See [docs/retrieval-quality-spec.md](docs/retrieval-quality-spec.md).
 4. ~~**B-7 / B-3**~~ — both fixed 2026-09-03.
 5. ~~**R-1..R-3**~~ — all three done 2026-09-03.
 

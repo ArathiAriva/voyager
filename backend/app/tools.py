@@ -472,7 +472,12 @@ async def _execute_search_memory(args: dict, session: AsyncSession) -> str:
     results = memory.search_memory(query)
     if not results["episodes"] and not results["preferences"]:
         return json.dumps({"message": "No relevant memories found."})
-    return json.dumps(results)
+    # search_memory also returns id/distance hits for instrumentation; the model only
+    # needs the documents, so don't spend context on them.
+    return json.dumps({
+        "episodes": results["episodes"],
+        "preferences": results["preferences"],
+    })
 
 
 TOOL_EXECUTORS = {

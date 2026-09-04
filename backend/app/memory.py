@@ -11,9 +11,11 @@ The Chroma DB is persisted to ./chroma_db relative to where the server runs.
 import hashlib
 import logging
 import os
+import time
 import chromadb
 from chromadb.config import Settings
 
+from app import retrieval
 from app.utils import dest_matches
 
 logger = logging.getLogger("voyager.memory")
@@ -100,13 +102,18 @@ def search_journals(query: str, trip_id: str | None = None, n_results: int = 5) 
     """
     collection = _journals()
     count = collection.count()
+    filters = {"trip_id": trip_id}
     if count == 0:
+        retrieval.record(collection="journals", query=query, n_requested=n_results,
+                         result_ids=[], distances=[], latency_ms=0.0, filters=filters)
         return []
     where = {"trip_id": trip_id} if trip_id else None
     kwargs: dict = {"query_texts": [query], "n_results": min(n_results, count)}
     if where:
         kwargs["where"] = where
+    started = time.perf_counter()
     results = collection.query(**kwargs)
+    latency_ms = (time.perf_counter() - started) * 1000
     hits = []
     if results["documents"]:
         for doc, meta, cid in zip(
@@ -120,6 +127,10 @@ def search_journals(query: str, trip_id: str | None = None, n_results: int = 5) 
                 "date": meta.get("date", ""),
                 "text": doc,
             })
+    retrieval.record(collection="journals", query=query, n_requested=n_results,
+                     result_ids=[h["entry_id"] for h in hits],
+                     distances=results["distances"][0] if results.get("distances") else [],
+                     latency_ms=latency_ms, filters=filters)
     logger.info("memory | journal search '%s' → %d hits", query[:40], len(hits))
     return hits
 
@@ -171,7 +182,10 @@ def search_saved_places(
     """
     collection = _places()
     count = collection.count()
+    filters = {"trip_id": trip_id, "category": category, "destination": destination}
     if count == 0:
+        retrieval.record(collection="saved_places", query=query, n_requested=n_results,
+                         result_ids=[], distances=[], latency_ms=0.0, filters=filters)
         return []
     if trip_id and category:
         where: dict = {"$and": [{"trip_id": trip_id}, {"category": category}]}
@@ -187,14 +201,18 @@ def search_saved_places(
     kwargs: dict = {"query_texts": [query], "n_results": fetch}
     if where:
         kwargs["where"] = where
+    started = time.perf_counter()
     results = collection.query(**kwargs)
+    latency_ms = (time.perf_counter() - started) * 1000
     hits = []
+    kept_distances: list[float] = []
     if results["documents"]:
-        for doc, meta, cid in zip(
+        raw_distances = results["distances"][0] if results.get("distances") else []
+        for idx, (doc, meta, cid) in enumerate(zip(
             results["documents"][0],
             results["metadatas"][0],  # type: ignore[index]
             results["ids"][0],
-        ):
+        )):
             place_dest = meta.get("destination", "")
             if destination and not dest_matches(destination, place_dest):
                 continue
@@ -205,8 +223,16 @@ def search_saved_places(
                 "category": meta.get("category", ""),
                 "text": doc,
             })
+            if idx < len(raw_distances):
+                kept_distances.append(raw_distances[idx])
             if len(hits) >= n_results:
                 break
+    # Log post-filter hits: the destination scope is applied after the vector query,
+    # and it is exactly what B-6 got wrong, so the filtered result is the meaningful
+    # one to measure.
+    retrieval.record(collection="saved_places", query=query, n_requested=n_results,
+                     result_ids=[h["place_id"] for h in hits], distances=kept_distances,
+                     latency_ms=latency_ms, filters=filters)
     logger.info("memory | places search '%s'%s → %d hits", query[:40],
                 f" [dest={destination}]" if destination else "", len(hits))
     return hits
@@ -216,22 +242,46 @@ def search_memory(query: str, n_results: int = 5) -> dict:
     """
     Search both episodic and semantic collections for memories relevant to the query.
     Returns a dict with 'episodes' and 'preferences' lists.
+
+    Also returns 'episode_hits'/'preference_hits' carrying each document's Chroma ID
+    and distance. The plain lists stay for existing callers; the hits make a result
+    auditable and measurable after the fact, which it previously was not -- Chroma
+    returns ids and distances on every query and they were being discarded.
     """
-    def _query(collection: chromadb.Collection) -> list[str]:
+    def _query(collection: chromadb.Collection, name: str) -> list[dict]:
         count = collection.count()
         if count == 0:
+            retrieval.record(collection=name, query=query, n_requested=n_results,
+                             result_ids=[], distances=[], latency_ms=0.0)
             return []
+        started = time.perf_counter()
         results = collection.query(
             query_texts=[query],
             n_results=min(n_results, count),
         )
-        return results["documents"][0] if results["documents"] else []
+        latency_ms = (time.perf_counter() - started) * 1000
+        documents = results["documents"][0] if results["documents"] else []
+        ids = results["ids"][0] if results.get("ids") else []
+        distances = results["distances"][0] if results.get("distances") else []
+        retrieval.record(collection=name, query=query, n_requested=n_results,
+                         result_ids=ids, distances=distances, latency_ms=latency_ms)
+        return [
+            {"id": i, "document": d, "distance": dist}
+            for i, d, dist in zip(ids, documents, distances)
+        ]
 
-    episodes = _query(_episodic())
-    preferences = _query(_semantic())
+    episode_hits = _query(_episodic(), "episodic")
+    preference_hits = _query(_semantic(), "semantic")
+    episodes = [h["document"] for h in episode_hits]
+    preferences = [h["document"] for h in preference_hits]
 
     logger.info(
         "memory | search '%s' → %d episodes, %d preferences",
         query[:40], len(episodes), len(preferences),
     )
-    return {"episodes": episodes, "preferences": preferences}
+    return {
+        "episodes": episodes,
+        "preferences": preferences,
+        "episode_hits": episode_hits,
+        "preference_hits": preference_hits,
+    }

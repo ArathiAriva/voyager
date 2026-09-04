@@ -119,7 +119,12 @@ def test_search_empty_collections_returns_empty():
     from app.memory import search_memory
 
     results = search_memory("solo travel Japan")
-    assert results == {"episodes": [], "preferences": []}
+    assert results["episodes"] == []
+    assert results["preferences"] == []
+    # search_memory also returns id/distance hits now (retrieval spec); on empty
+    # collections those are empty too.
+    assert results["episode_hits"] == []
+    assert results["preference_hits"] == []
 
 
 # ── Combined ─────────────────────────────────────────────────────────────────
@@ -514,3 +519,83 @@ def test_error_frame_falls_back_to_raw_text_when_not_json():
     raw = "event: error\ndata: not json at all\n"
     assert quality_parse(raw)[1] == ["not json at all"]
     assert safety_parse(raw)[2] == ["not json at all"]
+
+
+# ── retrieval instrumentation (docs/retrieval-quality-spec.md) ──────────────
+
+def test_record_is_a_noop_without_a_running_loop():
+    """Instrumentation must never dictate how callers are structured, and must never
+    raise: an accounting failure cannot be allowed to break a user request."""
+    from app import retrieval
+
+    retrieval.record(collection="semantic", query="q", n_requested=5,
+                     result_ids=["a"], distances=[0.1], latency_ms=1.0)
+
+
+def test_record_writes_a_row_and_keeps_a_task_reference(tmp_path, monkeypatch):
+    """The write is scheduled from sync code, so the task needs a strong reference
+    or it can be garbage-collected mid-await (B-1/B-4/B-11)."""
+    import asyncio
+    import app.db as db
+    from app import retrieval
+    from app.models.orm import Base, RetrievalLogORM
+    from sqlalchemy import select
+
+    original = db.DB_PATH
+    db.reconfigure(f"sqlite+aiosqlite:///{tmp_path}/retrieval.db")
+
+    async def scenario():
+        async with db.engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+        retrieval.record(collection="saved_places", query="where to eat",
+                         n_requested=8, result_ids=["p1", "p2"],
+                         distances=[0.31, 0.42], latency_ms=12.5,
+                         filters={"destination": "Rome", "trip_id": None})
+        assert len(retrieval._pending) == 1, "task must be retained while in flight"
+        await asyncio.sleep(0.2)
+        async with db.SessionLocal() as session:
+            rows = (await session.execute(select(RetrievalLogORM))).scalars().all()
+        assert len(rows) == 1
+        row = rows[0]
+        assert row.collection == "saved_places"
+        assert row.n_requested == 8 and row.n_returned == 2
+        assert row.result_ids == ["p1", "p2"]
+        # None-valued filters are dropped, so "was a filter applied" stays meaningful
+        assert row.filters == {"destination": "Rome"}
+        assert not retrieval._pending, "task must be released once done"
+
+    try:
+        asyncio.run(scenario())
+    finally:
+        db.reconfigure(original)
+
+
+def test_search_memory_returns_ids_and_distances():
+    """Spec prerequisite: search_memory returned documents only, so its results were
+    unauditable. Chroma provides ids and distances on every query."""
+    import app.memory as mem
+
+    mem.store_episode("conv-ret-1", "Walked the Palatine Hill at sunset.")
+    out = mem.search_memory("what did I do in Rome")
+
+    assert "episode_hits" in out and "preference_hits" in out
+    assert out["episodes"] == [h["document"] for h in out["episode_hits"]]
+    if out["episode_hits"]:
+        hit = out["episode_hits"][0]
+        assert hit["id"] and isinstance(hit["distance"], float)
+
+
+def test_scoped_and_unscoped_place_searches_are_distinguishable(isolated_places):
+    """The B-6 signature: an unscoped search spans destinations, a scoped one does
+    not. Both are logged with their filters, so the difference is now measurable
+    rather than something you notice by reading tool-call logs."""
+    import app.memory as mem
+
+    mem.store_saved_place("p-rome", "t1", "Rome, Italy", "Roscioli", "restaurant", "Roman pasta.")
+    mem.store_saved_place("p-lis", "t2", "Lisbon, Portugal", "Licorista", "bar", "Ginjinha bar.")
+
+    unscoped = mem.search_saved_places("where should I eat")
+    scoped = mem.search_saved_places("where should I eat", destination="Rome")
+
+    assert {h["destination"] for h in unscoped} == {"Rome, Italy", "Lisbon, Portugal"}
+    assert {h["destination"] for h in scoped} == {"Rome, Italy"}
