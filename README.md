@@ -88,10 +88,39 @@ uvicorn app.main:app --reload
 Or use the profile script (recommended — handles per-profile DB and env):
 
 ```bash
-bash scripts/run.sh --profile rand
+bash scripts/run.sh --profile rand                    # defaults: port 8060, multi-agent planner
+bash scripts/run.sh --profile rand --planner single   # single-agent tool-call loop
+bash scripts/run.sh --profile rand --port 8061        # run a second instance side by side
 ```
 
 API available at `http://localhost:8060`. Interactive docs at `http://localhost:8060/docs`.
+
+> **Note:** use `127.0.0.1`, not `localhost`, if anything else on your machine is bound to
+> the same port over IPv6 (Docker Desktop is a common culprit). The backend binds IPv4
+> only, so `localhost` can resolve to `::1` and hang instead of connecting.
+
+### Choosing the planning architecture
+
+Two architectures handle planning requests, and both stay live so they can be compared:
+
+| | |
+|---|---|
+| `multi` (default) | LangGraph multi-agent graph — specialist researchers, optimizer, critic. Emits live progress steps to the chat UI. |
+| `single` | The single-agent tool-call loop. |
+
+Resolution order is **per-request override → `VOYAGER_PLANNER` env → `multi`**:
+
+- `--planner single|multi` on `run.sh` sets it for the whole server (applied *after* the
+  profile file is sourced, so it beats a `VOYAGER_PLANNER` baked into a profile).
+- `VOYAGER_PLANNER=single` in the environment does the same thing.
+- The eval harnesses pass a per-request override (`--planner single|multi|both`) so both
+  architectures can be measured in one process without restarting.
+
+The flag only decides which architecture handles a **planning-intent** message. Intent is
+detected by phrase matching (`app/planning/router.py`) — "plan my", "itinerary", "days in",
+"day trip", and revision phrases like "redo the" / "swap the". Anything else runs the
+single-agent loop regardless of the flag, and if the graph raises, the request falls back
+to the single-agent loop rather than failing.
 
 ### Environment variables
 
@@ -100,6 +129,7 @@ API available at `http://localhost:8060`. Interactive docs at `http://localhost:
 | `OPENROUTER_API_KEY` | Yes | — | OpenRouter API key |
 | `OPENROUTER_MODEL` | No | `anthropic/claude-haiku-4-5` | Any OpenRouter model string |
 | `BRAVE_API_KEY` | No | — | [Brave Search API](https://brave.com/search/api/) key; enables the `web_search` tool |
+| `VOYAGER_PLANNER` | No | `multi` | `single` or `multi` — which architecture handles planning requests (see above) |
 
 ---
 

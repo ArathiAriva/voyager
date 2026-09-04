@@ -55,6 +55,6 @@ bash scripts/migrate.sh               # Alembic migrations with DB backup/auto-r
 |---|---|---|
 | `OPENROUTER_API_KEY` | Yes | |
 | `OPENROUTER_MODEL` | No | Default `anthropic/claude-haiku-4-5` |
-| `VOYAGER_PLANNER` | No | `single` or `multi` (see evals-ops.md) |
+| `VOYAGER_PLANNER` | No | `single` or `multi` (see evals-ops.md). Settable per-server with `scripts/run.sh --planner`, which is applied after the profile file is sourced so it wins over a profile value. |
 | `PHOENIX_COLLECTOR_ENDPOINT` | No | Enables tracing when set |
 | `BRAVE_API_KEY` | No | Enables the `web_search` MCP tool; without it the tool returns a "not configured" message instead of failing. Passed through to the MCP subprocess explicitly by `mcp_client.py` — the SDK only inherits an allowlist. |
