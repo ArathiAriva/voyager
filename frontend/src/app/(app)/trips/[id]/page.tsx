@@ -4,8 +4,9 @@ import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import {
   Box, Flex, HStack, VStack, Text, Badge, Button, Textarea, Input,
-  Spinner, Portal,
+  Spinner, Portal, Tabs,
 } from "@chakra-ui/react";
+import { ChevronLeftIcon, PencilIcon } from "@/components/icons";
 import {
   fetchTrip, fetchJournalEntries, createJournalEntry, deleteJournalEntry,
   fetchContent, addContent, deleteContent, updateTrip,
@@ -15,6 +16,31 @@ import {
 } from "@/lib/api";
 
 type Tab = "journal" | "itinerary" | "places" | "content";
+
+const TABS: { value: Tab; label: string }[] = [
+  { value: "journal", label: "Journal" },
+  { value: "itinerary", label: "Itinerary" },
+  { value: "places", label: "Places" },
+  { value: "content", label: "Connected" },
+];
+
+/** Count pill shown on each tab. Muted normally, accent-tinted when its tab is active. */
+function TabCount({ n, active }: { n: number; active: boolean }) {
+  return (
+    <Badge
+      size="sm"
+      borderRadius="full"
+      px={1.5}
+      minW="18px"
+      justifyContent="center"
+      fontVariantNumeric="tabular-nums"
+      bg={active ? "accent.activeBg" : "bg.muted"}
+      color={active ? "accent.active" : "text.secondary"}
+    >
+      {n}
+    </Badge>
+  );
+}
 
 export default function TripDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -193,21 +219,53 @@ export default function TripDetailPage() {
     return (
       <Box p={8}>
         <Text color="red.500">{error ?? "Trip not found."}</Text>
-        <Button mt={4} size="sm" variant="ghost" onClick={() => router.push("/trips")}>← Back to trips</Button>
+        <Button
+          mt={4}
+          size="sm"
+          variant="ghost"
+          color="text.secondary"
+          onClick={() => router.push("/trips")}
+          _hover={{ bg: "bg.muted", color: "text.primary" }}
+        >
+          <ChevronLeftIcon />
+          Trips
+        </Button>
       </Box>
     );
   }
 
+  const counts: Record<Tab, number> = {
+    journal: entries.length,
+    itinerary: trip?.itinerary?.length ?? 0,
+    places: places.length,
+    content: content.length,
+  };
+
   return (
     <Box p={8} maxW="860px">
       {/* Header */}
-      <HStack mb={2} gap={2} justify="space-between">
-        <Button size="xs" variant="ghost" color="text.secondary" onClick={() => router.push("/trips")}>
-          ← Trips
+      <HStack mb={4} gap={2} justify="space-between">
+        <Button
+          size="sm"
+          variant="ghost"
+          color="text.secondary"
+          onClick={() => router.push("/trips")}
+          _hover={{ bg: "bg.muted", color: "text.primary" }}
+        >
+          <ChevronLeftIcon />
+          Trips
         </Button>
         {!showEditForm && (
-          <Button size="xs" variant="ghost" color="text.secondary" onClick={openEdit}>
-            Edit
+          <Button
+            size="sm"
+            variant="outline"
+            borderColor="border.muted"
+            color="text.primary"
+            onClick={openEdit}
+            _hover={{ bg: "bg.muted", borderColor: "text.muted" }}
+          >
+            <PencilIcon />
+            Edit trip
           </Button>
         )}
       </HStack>
@@ -327,33 +385,29 @@ export default function TripDetailPage() {
       )}
 
       {/* Tabs */}
-      <HStack mb={6} borderBottom="2px solid" borderColor="border.default" gap={0}>
-        {(["journal", "itinerary", "places", "content"] as Tab[]).map((t) => (
-          <Button
-            key={t}
-            variant="ghost"
-            size="sm"
-            px={4}
-            pb={3}
-            borderRadius={0}
-            borderBottom="2px solid"
-            borderColor={tab === t ? "blue.500" : "transparent"}
-            color={tab === t ? "accent.active" : "text.muted"}
-            fontWeight={tab === t ? "semibold" : "normal"}
-            _hover={{ color: "blue.600", bg: "transparent" }}
-            onClick={() => setTab(t)}
-          >
-            {t === "journal" ? "📓 Journal" : t === "itinerary" ? "🗺️ Itinerary" : t === "places" ? "📍 Places" : "🔗 Connected"}
-          </Button>
-        ))}
-      </HStack>
+      <Tabs.Root
+        value={tab}
+        onValueChange={(e) => setTab(e.value as Tab)}
+        variant="line"
+        colorPalette="blue"
+        mb={6}
+      >
+        <Tabs.List>
+          {TABS.map((t) => (
+            <Tabs.Trigger key={t.value} value={t.value} gap={2}>
+              {t.label}
+              <TabCount n={counts[t.value]} active={tab === t.value} />
+            </Tabs.Trigger>
+          ))}
+        </Tabs.List>
+      </Tabs.Root>
 
       {/* Journal tab */}
       {tab === "journal" && (
         <VStack align="stretch" gap={4}>
           <HStack justify="space-between">
             <Text fontSize="sm" color="text.muted">
-              {entries.length === 0 ? "No entries yet." : `${entries.length} entr${entries.length === 1 ? "y" : "ies"}`}
+              {entries.length === 0 ? "" : `${entries.length} entr${entries.length === 1 ? "y" : "ies"}`}
             </Text>
             <Button size="sm" colorPalette="blue" variant="outline" onClick={() => setShowEntryForm((v) => !v)}>
               {showEntryForm ? "Cancel" : "+ Add entry"}
@@ -532,7 +586,7 @@ export default function TripDetailPage() {
         <VStack align="stretch" gap={4}>
           <HStack justify="space-between">
             <Text fontSize="sm" color="text.muted">
-              {places.length === 0 ? "No places saved yet." : `${places.length} place${places.length === 1 ? "" : "s"}`}
+              {places.length === 0 ? "" : `${places.length} place${places.length === 1 ? "" : "s"}`}
             </Text>
             <Button size="sm" colorPalette="blue" variant="outline" onClick={() => setShowPlaceForm((v) => !v)}>
               {showPlaceForm ? "Cancel" : "+ Add place"}
@@ -694,7 +748,7 @@ export default function TripDetailPage() {
         <VStack align="stretch" gap={4}>
           <HStack justify="space-between">
             <Text fontSize="sm" color="text.muted">
-              {content.length === 0 ? "No links yet." : `${content.length} link${content.length === 1 ? "" : "s"}`}
+              {content.length === 0 ? "" : `${content.length} link${content.length === 1 ? "" : "s"}`}
             </Text>
             <Button size="sm" colorPalette="blue" variant="outline" onClick={() => setShowContentForm((v) => !v)}>
               {showContentForm ? "Cancel" : "+ Add link"}

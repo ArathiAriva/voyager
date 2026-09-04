@@ -55,7 +55,7 @@ function TripActionCard({ trip, action }: { trip: Trip; action: "trip_created" |
         transition="opacity 0.15s"
         flexShrink={0}
       >
-        View →
+        View
       </Box>
     </Box>
   );

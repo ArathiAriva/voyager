@@ -1,7 +1,8 @@
 "use client";
 
 import { useState, useRef, useEffect, useCallback } from "react";
-import { Box, Flex, Text, Input, VStack, HStack, Spinner } from "@chakra-ui/react";
+import { Box, Flex, Text, Input, VStack, HStack, Spinner, Button } from "@chakra-ui/react";
+import { ChevronLeftIcon } from "@/components/icons";
 import { useRouter, useParams } from "next/navigation";
 import ReactMarkdown from "react-markdown";
 import {
@@ -52,7 +53,7 @@ function TripActionCard({ trip, action }: { trip: Trip; action: "trip_created" |
         transition="opacity 0.15s"
         flexShrink={0}
       >
-        View →
+        View
       </Box>
     </Box>
   );
@@ -153,20 +154,18 @@ export default function ChatConversationPage() {
       {/* Header */}
       <Box px={8} py={5} borderBottom="1px solid" borderColor="border.default">
         <Flex align="center" gap={3}>
-          <Box
-            as="button"
-            onClick={() => router.push("/chats")}
+          <Button
+            size="sm"
+            variant="ghost"
             color="text.secondary"
-            _hover={{ color: "text.primary" }}
-            fontSize="sm"
-            display="flex"
-            alignItems="center"
-            gap={1}
-            transition="color 0.1s"
+            onClick={() => router.push("/chats")}
+            _hover={{ bg: "bg.muted", color: "text.primary" }}
+            flexShrink={0}
           >
-            ← Back
-          </Box>
-          <Box w="1px" h={4} bg="border.default" />
+            <ChevronLeftIcon />
+            Chats
+          </Button>
+          <Box w="1px" h={4} bg="border.default" flexShrink={0} />
           <Box flex={1} minW={0}>
             <Text
               fontSize="sm"
