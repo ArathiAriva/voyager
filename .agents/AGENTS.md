@@ -1,6 +1,8 @@
 # Voyager — Agent Context
 
-Voyager is an AI travel companion (chat, trip planning, memory, journal RAG) built as a 6-month AI-engineering learning project. Currently at Month 4.5–4.75 of 6: single-agent chat loop + LangGraph multi-agent planner are both live, feature-flagged for A/B evals. Active workstream is an **indirect prompt-injection safety eval suite** (`backend/evals/safety_*`) running against both architectures — see [evals-ops.md](evals-ops.md) and [OPEN-ITEMS.md](../OPEN-ITEMS.md).
+Voyager is an AI travel companion (chat, trip planning, memory, journal RAG) built as a 6-month AI-engineering learning project. Currently at Month 4.5–4.75 of 6: single-agent chat loop + LangGraph multi-agent planner are both live, feature-flagged for A/B evals.
+
+**Active workstream (2026-09-03): core product flow.** Voyager is first an AI-engineering / LLM-app project — making the chat → trip → itinerary path feel natural comes before safety work. The **indirect prompt-injection safety eval suite** (`backend/evals/safety_*`) is **paused**, not abandoned: the suite, its `results/`, and `SAFETY-LEDGER.md` stay in place and resume later. Don't start safety-eval work (S-1b, S-3, S-4, S-5, S-9, S-10) unless the user asks. See [OPEN-ITEMS.md](../OPEN-ITEMS.md) for what's parked and what isn't.
 
 ## System at a glance
 

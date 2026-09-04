@@ -14,8 +14,17 @@ Severity is about consequence if left alone, not effort to fix.
 
 ## Priority right now
 
-1. **S-1b** — run the safety suite properly (n≥3, both architectures). Everything built
-   over the last stretch is currently unmeasured. *(~$4, needs key balance)*
+> **Safety-eval work is paused (2026-09-03).** Voyager is first an AI-engineering /
+> LLM-app project; safety evals resume once the core product flow feels natural. The
+> suite, its results, and `SAFETY-LEDGER.md` stay as they are — this is a pause, not a
+> rollback, and nothing below deletes prior work. **S-1b, S-3, S-4, S-5, S-9, S-10 are
+> parked**; don't pick them up without the user saying so.
+>
+> S-13 is *not* parked — it calibrates the **quality** judge, which gates per-node model
+> decisions and belongs to the product track.
+
+1. **Product flow** — the chat→trip→itinerary path is the current focus. B-10 (agent
+   duplicates trips) and B-9 (no delete confirmation) are both defects in that flow.
 2. **S-13** — calibrate the quality judge. Gates any per-node model decision, since that
    verdict would rest entirely on an unmeasured judge. *(~15 hand labels)*
 3. **Retrieval instrumentation** — `retrieval_log` + returning IDs/distances from
@@ -26,6 +35,12 @@ Severity is about consequence if left alone, not effort to fix.
 
 Not urgent but worth naming: **M-2** is the structural unlock under M-3/M-4/M-5 and the
 open half of B-2 — none of those move until preferences carry provenance.
+
+Web search is the largest unbuilt capability behind the "Research" pillar and four
+planner researchers (`docs/multi-agent-planning.md`). It was previously gated behind
+S-1b; with safety paused, that gate is gone — but the propagation question in S-4
+(searched content reaching `save_place`, persisting across sessions) is a product
+correctness issue too, so decide it either way before wiring search in.
 
 ---
 
@@ -136,6 +151,100 @@ Rows with `category='street food'` fail the `list[SavedPlace]` response model
 trip. The write path that created them did not enforce the enum the read path demands.
 Either widen the enum, coerce on read, or clean the rows — but the mismatch itself is
 the bug.
+
+### B-11 — Place enrichment uses a bare `create_task` — same defect class as B-1/B-4
+
+Both enrichment triggers spawn `_enrich_place` without retaining a reference:
+
+- `app/tools.py:369` — the `save_place` agent tool
+- `app/routers/places.py:173` — the manual `POST /places` route
+
+This is exactly the B-1 root cause: the event loop holds only a weak reference, so the
+task can be garbage-collected mid-await and vanish with no exception, no log line, and no
+enrichment. The failure is silent in a way that looks identical to a slow fetch — the
+place is left at `enrichment_status="pending"` forever, since neither the `failed` nor
+`done` branch ever runs.
+
+The fix already exists in this codebase twice: `_spawn_extraction` in
+`app/routers/journal.py:56` and `app/routers/conversations.py:100` both keep a
+module-level `set[asyncio.Task]`, add the task, and discard it in a done-callback.
+`conversations.py:110` even carries a comment saying never to use bare `create_task`.
+Enrichment simply never got the same treatment.
+
+`conversations.py:262` (`graph_task`) is *not* an instance — it is held in a local and
+awaited in the same scope.
+
+Worth fixing alongside: the two call sites are copy-paste of each other, and the shared
+helper wants a concurrency bound like the extraction semaphore, since a bulk import could
+otherwise fire unbounded outbound Jina fetches.
+
+**Severity:** medium — silent, permanent loss of enrichment (summary, address, area,
+category) and the Chroma embedding that `search_places` depends on, so an affected place
+is also invisible to places RAG. Timing-dependent, so it fails intermittently rather than
+reproducibly. *(severity inferred, not stated by the user)*
+
+### B-10 — `create_trip` is not idempotent; the agent duplicated a trip
+
+Observed: asking "Did you save it?" produced a second `create_trip` call — and a second
+Unionville / September 5 row — rather than a `get_trips` check. Confirmed by the user,
+who deleted the duplicate.
+
+(A DB query afterwards shows one row, `moiraine` / `c3d5bacc`. That is the post-deletion
+state, not evidence against the duplicate — don't re-derive "it never happened" from it.)
+
+Three layers each fail open, and the tool access is *not* the missing piece — `get_trips`
+exists and is exposed to the model:
+
+1. **`_execute_create_trip` (`app/tools.py:276`) has no idempotency check.** Fresh
+   `uuid4()`, unconditional insert, no unique constraint on the table. Same destination
+   and dates twice → two rows. This is the root cause.
+2. **`create_trip`'s description (`app/tools.py:52`) never says to check first.** Its only
+   guard is "Always ask the user for confirmation" — social, not stateful.
+3. **`get_trips`' description frames it as retrieval for the user's benefit**, not as a
+   precondition of a write, so nothing connects it to the create path.
+
+A verification question ("did you save it?") is exactly the case that should route to
+`get_trips`, but `create_trip` is the only tool whose description mentions saving.
+Note `set_itinerary` (`app/tools.py:217`) *does* carry "Call get_trips first to find the
+trip ID" — so the instruction pattern exists in the codebase and is simply missing from
+`create_trip`.
+
+The local JSONL LLM trace for that conversation should show both `create_trip` calls
+back to back with no intervening `get_trips` — useful as a regression fixture once the
+executor check lands.
+
+The planner writes trips through its own path (`app/planning/graph.py:187`), so this is
+likely reproducible on both architectures and the guard belongs somewhere both share
+rather than in `tools.py` alone.
+
+Fix at the executor, not the prompt: look up an existing trip by normalized
+destination + dates and return the existing record (`"action": "trip_already_exists"`) so
+the agent reports "already saved" instead of inserting. Prompt wording only lowers the
+probability; the executor check removes it. Worth also asking whether the DB should carry
+a uniqueness constraint at all, given "two real trips to the same place on the same dates"
+is not a case worth supporting yet.
+
+**Severity:** medium-high — silent data duplication in the core object of the product.
+User-visible, needs manual cleanup, and it corrupts any per-trip retrieval that assumes
+one row per trip.
+*(severity inferred, not stated by the user)*
+
+### B-9 — Destructive deletes have no confirmation step
+
+Clicking the `×` on a trip card calls `deleteTrip` immediately
+(`frontend/src/app/(app)/trips/page.tsx:61`) — one stray click destroys the trip and,
+with it, its journal entries and saved places.
+
+Not limited to trips: there is no `confirm()` anywhere in the frontend, so journal
+entries, saved places, and connected links all delete on a single unguarded click too.
+Trips are the most consequential because the delete cascades.
+
+There is also no undo, so the click is the whole safety story. Worth solving once with a
+shared confirm dialog rather than per-call-site, since Chakra v3 ships a `Dialog`
+primitive the app does not use yet.
+
+**Severity:** medium — silent, unrecoverable user data loss from a single misclick.
+*(severity inferred, not stated by the user)*
 
 ### B-5 — Journal extraction leaks cost attribution
 
