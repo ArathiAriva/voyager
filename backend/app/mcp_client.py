@@ -11,7 +11,7 @@ import os
 import logging
 from contextlib import asynccontextmanager
 from mcp import ClientSession, StdioServerParameters
-from mcp.client.stdio import stdio_client
+from mcp.client.stdio import get_default_environment, stdio_client
 
 logger = logging.getLogger("voyager.mcp_client")
 
@@ -21,9 +21,18 @@ _SERVER_PYTHON = os.path.join(os.path.dirname(__file__), "..", "..", "mcp-server
 
 @asynccontextmanager
 async def _mcp_session():
+    # The MCP SDK only inherits an allowlist of "safe" env vars, so anything the
+    # server needs (API keys) must be passed through explicitly.
+    env = get_default_environment()
+    for key in ("BRAVE_API_KEY",):
+        value = os.getenv(key)
+        if value:
+            env[key] = value
+
     params = StdioServerParameters(
         command=os.path.abspath(_SERVER_PYTHON),
         args=[os.path.abspath(_SERVER_SCRIPT)],
+        env=env,
     )
     async with stdio_client(params) as (read, write):
         async with ClientSession(read, write) as session:

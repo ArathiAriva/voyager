@@ -99,6 +99,7 @@ API available at `http://localhost:8060`. Interactive docs at `http://localhost:
 |----------|----------|---------|-------------|
 | `OPENROUTER_API_KEY` | Yes | — | OpenRouter API key |
 | `OPENROUTER_MODEL` | No | `anthropic/claude-haiku-4-5` | Any OpenRouter model string |
+| `BRAVE_API_KEY` | No | — | [Brave Search API](https://brave.com/search/api/) key; enables the `web_search` tool |
 
 ---
 

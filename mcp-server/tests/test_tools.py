@@ -5,7 +5,7 @@ import sys
 import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
-from server import get_weather, get_exchange_rate
+from server import get_weather, get_exchange_rate, web_search
 
 pytestmark = pytest.mark.asyncio
 
@@ -104,3 +104,73 @@ async def test_get_exchange_rate_invalid_currency():
         result = await get_exchange_rate("USD", "XYZ")
 
     assert "error" in result
+
+
+# ── web_search ───────────────────────────────────────────────────────────────
+
+BRAVE_RESPONSE = {
+    "web": {
+        "results": [
+            {
+                "title": "Unionville Festival 2025",
+                "url": "https://example.com/unionville-festival",
+                "description": "Annual street festival on Main Street Unionville.",
+                "age": "2 days ago",
+            },
+            {
+                "title": "Markham Events Calendar",
+                "url": "https://example.com/markham-events",
+                "description": "What's on in Markham this September.",
+            },
+        ]
+    }
+}
+
+
+async def test_web_search_returns_results(monkeypatch):
+    monkeypatch.setenv("BRAVE_API_KEY", "test-key")
+    mock_client = AsyncMock()
+    mock_client.get.return_value = _mock_response(BRAVE_RESPONSE)
+
+    with patch("server.httpx.AsyncClient") as MockClient:
+        MockClient.return_value.__aenter__.return_value = mock_client
+        result = await web_search("unionville events")
+
+    assert result["query"] == "unionville events"
+    assert len(result["results"]) == 2
+    assert result["results"][0]["title"] == "Unionville Festival 2025"
+    assert result["results"][0]["url"] == "https://example.com/unionville-festival"
+    assert result["results"][1]["age"] is None
+
+
+async def test_web_search_without_api_key_degrades(monkeypatch):
+    monkeypatch.delenv("BRAVE_API_KEY", raising=False)
+    result = await web_search("anything")
+
+    assert result["results"] == []
+    assert "BRAVE_API_KEY" in result["error"]
+
+
+async def test_web_search_clamps_count(monkeypatch):
+    monkeypatch.setenv("BRAVE_API_KEY", "test-key")
+    mock_client = AsyncMock()
+    mock_client.get.return_value = _mock_response(BRAVE_RESPONSE)
+
+    with patch("server.httpx.AsyncClient") as MockClient:
+        MockClient.return_value.__aenter__.return_value = mock_client
+        await web_search("q", count=99)
+
+    assert mock_client.get.call_args.kwargs["params"]["count"] == 20
+
+
+async def test_web_search_handles_empty_results(monkeypatch):
+    monkeypatch.setenv("BRAVE_API_KEY", "test-key")
+    mock_client = AsyncMock()
+    mock_client.get.return_value = _mock_response({"web": {"results": []}})
+
+    with patch("server.httpx.AsyncClient") as MockClient:
+        MockClient.return_value.__aenter__.return_value = mock_client
+        result = await web_search("nothing matches this")
+
+    assert result["results"] == []
+    assert "note" in result
