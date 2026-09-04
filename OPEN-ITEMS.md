@@ -24,14 +24,14 @@ Severity is about consequence if left alone, not effort to fix.
 > decisions and belongs to the product track.
 
 1. **Product flow** — the chat→trip→itinerary path is the current focus. B-9, B-10 and
-   B-11 (delete confirmation, trip duplication, lost enrichment) and B-7 (places
-   endpoint 500) are all fixed as of 2026-09-03. **B-3** (5 red tests) is next.
+   B-11, B-7 and B-3 are all fixed as of 2026-09-03, and the backend suite is green
+   (63 passed). Next: **S-13** (calibrate the quality judge) or the R-1..R-3 refactors.
 2. **S-13** — calibrate the quality judge. Gates any per-node model decision, since that
    verdict would rest entirely on an unmeasured judge. *(~15 hand labels)*
 3. **Retrieval instrumentation** — `retrieval_log` + returning IDs/distances from
    `search_memory`. No labels, no LLM calls, and it is what would have caught B-6 and S-7.
    See [docs/retrieval-quality-spec.md](docs/retrieval-quality-spec.md). *(Phase 4)*
-4. **B-7 / B-3** — small user-facing 500; 5 red tests masking regressions.
+4. ~~**B-7 / B-3**~~ — both fixed 2026-09-03.
 5. **R-1..R-3** — refactors. R-3 (cost split across two DBs) has the most consequence.
 
 Not urgent but worth naming: **M-2** is the structural unlock under M-3/M-4/M-5 and the
@@ -81,14 +81,23 @@ to revoke — the same missing-provenance problem as M-2. Fix this with M-2, not
 
 **Severity:** low-medium — silent staleness, no crash.
 
-### B-3 — `test_content.py` mock target is stale · 5 failing tests
+### ~~B-3 — `test_content.py` mock target is stale~~ · **fixed 2026-09-03**
 
 All 5 failures are `AttributeError: module 'app.routers.content' does not have
 the attribute '_fetch_og_metadata'`. Pre-existing and unrelated to recent work
 (verified by stashing changes and re-running). The function was presumably
 renamed without updating the patch target.
 
-**Severity:** low, but it's 5 red tests masking real regressions in that module.
+**Fixed:** `_fetch_og_metadata` had moved to `app/utils.py` and lost its leading
+underscore. `content.py` imports it, so the patch target is
+`app.routers.content.fetch_og_metadata` — patch where it is used, not where it is defined.
+
+Verified the tests actually assert something rather than passing vacuously: deliberately
+breaking the OG fetch in `content.py` made `test_add_content_fetches_og_metadata` fail,
+and restoring it made it pass. Also audited every `patch(...)` target in the suite —
+no other stale ones.
+
+**The backend suite is now fully green: 63 passed, 0 failed.**
 
 ### ~~B-4 — Memory extraction is fire-and-forget with no backpressure~~ · **fixed 2026-08-23**
 

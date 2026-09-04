@@ -31,7 +31,7 @@ async def test_list_content_empty(client: AsyncClient):
 
 async def test_add_content_fetches_og_metadata(client: AsyncClient):
     trip_id = await _create_trip(client)
-    with patch("app.routers.content._fetch_og_metadata", new_callable=AsyncMock, return_value=("My Photo Album", "https://example.com/thumb.jpg")):
+    with patch("app.routers.content.fetch_og_metadata", new_callable=AsyncMock, return_value=("My Photo Album", "https://example.com/thumb.jpg")):
         resp = await client.post(f"/api/trips/{trip_id}/content", json={
             "url": "https://photos.example.com/album/lisbon",
             "type": "album",
@@ -46,7 +46,7 @@ async def test_add_content_fetches_og_metadata(client: AsyncClient):
 
 async def test_add_content_og_failure_still_saves(client: AsyncClient):
     trip_id = await _create_trip(client)
-    with patch("app.routers.content._fetch_og_metadata", new_callable=AsyncMock, return_value=(None, None)):
+    with patch("app.routers.content.fetch_og_metadata", new_callable=AsyncMock, return_value=(None, None)):
         resp = await client.post(f"/api/trips/{trip_id}/content", json={
             "url": "https://www.instagram.com/p/abc123",
             "type": "instagram",
@@ -60,7 +60,7 @@ async def test_add_content_og_failure_still_saves(client: AsyncClient):
 
 async def test_list_content_multiple(client: AsyncClient):
     trip_id = await _create_trip(client)
-    with patch("app.routers.content._fetch_og_metadata", new_callable=AsyncMock, return_value=(None, None)):
+    with patch("app.routers.content.fetch_og_metadata", new_callable=AsyncMock, return_value=(None, None)):
         await client.post(f"/api/trips/{trip_id}/content", json={"url": "https://example.com/1", "type": "blog"})
         await client.post(f"/api/trips/{trip_id}/content", json={"url": "https://example.com/2", "type": "album"})
 
@@ -70,7 +70,7 @@ async def test_list_content_multiple(client: AsyncClient):
 
 async def test_delete_content(client: AsyncClient):
     trip_id = await _create_trip(client)
-    with patch("app.routers.content._fetch_og_metadata", new_callable=AsyncMock, return_value=(None, None)):
+    with patch("app.routers.content.fetch_og_metadata", new_callable=AsyncMock, return_value=(None, None)):
         created = await client.post(f"/api/trips/{trip_id}/content", json={"url": "https://example.com/album", "type": "album"})
     content_id = created.json()["id"]
 
@@ -94,7 +94,7 @@ async def test_content_trip_not_found(client: AsyncClient):
 
 async def test_trip_delete_cascades_content(client: AsyncClient):
     trip_id = await _create_trip(client)
-    with patch("app.routers.content._fetch_og_metadata", new_callable=AsyncMock, return_value=(None, None)):
+    with patch("app.routers.content.fetch_og_metadata", new_callable=AsyncMock, return_value=(None, None)):
         await client.post(f"/api/trips/{trip_id}/content", json={"url": "https://example.com/album", "type": "album"})
 
     await client.delete(f"/api/trips/{trip_id}")
