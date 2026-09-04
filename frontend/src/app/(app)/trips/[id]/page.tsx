@@ -7,6 +7,7 @@ import {
   Spinner, Portal, Tabs,
 } from "@chakra-ui/react";
 import { ChevronLeftIcon, PencilIcon } from "@/components/icons";
+import { useConfirm } from "@/components/confirm-dialog";
 import {
   fetchTrip, fetchJournalEntries, createJournalEntry, deleteJournalEntry,
   fetchContent, addContent, deleteContent, updateTrip,
@@ -46,6 +47,7 @@ export default function TripDetailPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
 
+  const { confirm, dialog } = useConfirm();
   const [trip, setTrip] = useState<Trip | null>(null);
   const [entries, setEntries] = useState<JournalEntry[]>([]);
   const [content, setContent] = useState<ConnectedContent[]>([]);
@@ -133,6 +135,12 @@ export default function TripDetailPage() {
   }
 
   async function handleDeleteEntry(entryId: string) {
+    const ok = await confirm({
+      title: "Delete this entry?",
+      body: "This journal entry will be removed, along with the memories extracted from it. This cannot be undone.",
+      confirmLabel: "Delete entry",
+    });
+    if (!ok) return;
     setDeletingEntryId(entryId);
     try {
       await deleteJournalEntry(id, entryId);
@@ -160,6 +168,12 @@ export default function TripDetailPage() {
   }
 
   async function handleDeleteContent(contentId: string) {
+    const ok = await confirm({
+      title: "Remove this link?",
+      body: "This link will be removed from the trip. This cannot be undone.",
+      confirmLabel: "Remove link",
+    });
+    if (!ok) return;
     setDeletingContentId(contentId);
     try {
       await deleteContent(id, contentId);
@@ -195,6 +209,13 @@ export default function TripDetailPage() {
   }
 
   async function handleDeletePlace(placeId: string) {
+    const place = places.find((p) => p.id === placeId);
+    const ok = await confirm({
+      title: "Remove this place?",
+      body: `${place?.name ?? "This place"} will be removed from the trip. This cannot be undone.`,
+      confirmLabel: "Remove place",
+    });
+    if (!ok) return;
     setDeletingPlaceId(placeId);
     try {
       await deletePlace(id, placeId);
@@ -243,6 +264,7 @@ export default function TripDetailPage() {
 
   return (
     <Box p={8} maxW="860px">
+      {dialog}
       {/* Header */}
       <HStack mb={4} gap={2} justify="space-between">
         <Button

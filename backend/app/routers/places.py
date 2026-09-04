@@ -55,8 +55,37 @@ async def _get_trip_or_404(trip_id: str, session: AsyncSession) -> TripORM:
     return trip
 
 
+# Background enrichment tasks. The event loop only holds a weak reference to a bare
+# `asyncio.create_task(...)`, so an unreferenced task can be garbage-collected mid-await
+# and vanish with no exception and no log line -- the same defect that silently dropped
+# memory extraction (see B-1/B-4). Keep a strong reference until each task finishes, and
+# bound concurrency so a bulk import cannot fire unlimited outbound Jina fetches.
+_enrichment_tasks: set[asyncio.Task] = set()
+_ENRICHMENT_CONCURRENCY = 4
+_enrichment_semaphore = asyncio.Semaphore(_ENRICHMENT_CONCURRENCY)
+
+
+def spawn_enrichment(place_id: str, url: str, destination: str) -> None:
+    """Start place enrichment in the background, retaining a reference until it finishes.
+
+    Always use this instead of `asyncio.create_task(_enrich_place(...))` directly.
+    """
+    task = asyncio.create_task(_enrich_place(place_id, url, destination))
+    _enrichment_tasks.add(task)
+    task.add_done_callback(_enrichment_tasks.discard)
+
+
 async def _enrich_place(place_id: str, url: str, destination: str) -> None:
-    """Background task: fetch URL via Jina Reader, extract structured data with LLM, update DB."""
+    """Background task: fetch URL via Jina Reader, extract structured data with LLM, update DB.
+
+    Spawn via `spawn_enrichment`, never `asyncio.create_task` directly -- see the note
+    above on why a bare task can silently disappear.
+    """
+    async with _enrichment_semaphore:
+        await _run_enrichment(place_id, url, destination)
+
+
+async def _run_enrichment(place_id: str, url: str, destination: str) -> None:
     try:
         jina_url = f"https://r.jina.ai/{url}"
         headers = {"Accept": "text/markdown"}
@@ -170,7 +199,7 @@ async def create_place(
     memory.store_saved_place(place.id, trip_id, trip.destination, place.name, place.category, embed_text)
 
     if body.url:
-        asyncio.create_task(_enrich_place(place.id, body.url, trip.destination))
+        spawn_enrichment(place.id, body.url, trip.destination)
 
     logger.info("places | created place=%s (%s) for trip=%s", place.id[:8], place.name, trip_id[:8])
     return place

@@ -23,8 +23,9 @@ Severity is about consequence if left alone, not effort to fix.
 > S-13 is *not* parked — it calibrates the **quality** judge, which gates per-node model
 > decisions and belongs to the product track.
 
-1. **Product flow** — the chat→trip→itinerary path is the current focus. B-10 (agent
-   duplicates trips) and B-9 (no delete confirmation) are both defects in that flow.
+1. **Product flow** — the chat→trip→itinerary path is the current focus. B-9, B-10 and
+   B-11 (delete confirmation, trip duplication, lost enrichment) are fixed as of
+   2026-09-03; **B-7** is the next defect in that flow.
 2. **S-13** — calibrate the quality judge. Gates any per-node model decision, since that
    verdict would rest entirely on an unmeasured judge. *(~15 hand labels)*
 3. **Retrieval instrumentation** — `retrieval_log` + returning IDs/distances from
@@ -36,11 +37,12 @@ Severity is about consequence if left alone, not effort to fix.
 Not urgent but worth naming: **M-2** is the structural unlock under M-3/M-4/M-5 and the
 open half of B-2 — none of those move until preferences carry provenance.
 
-Web search is the largest unbuilt capability behind the "Research" pillar and four
-planner researchers (`docs/multi-agent-planning.md`). It was previously gated behind
-S-1b; with safety paused, that gate is gone — but the propagation question in S-4
-(searched content reaching `save_place`, persisting across sessions) is a product
-correctness issue too, so decide it either way before wiring search in.
+Web search **shipped 2026-09-03** (Brave, as an MCP tool) for the single-agent chat
+loop. Two follow-ups remain: the four planner researchers still list "web search
+(future)" as a data source (`docs/multi-agent-planning.md`) and do not call it yet; and
+snippet-only search is weak at the local-events question that motivated it — pinning
+"what is on here on this date" likely needs fetching calendar pages through the existing
+Jina path rather than relying on Brave descriptions.
 
 ---
 
@@ -152,7 +154,7 @@ trip. The write path that created them did not enforce the enum the read path de
 Either widen the enum, coerce on read, or clean the rows — but the mismatch itself is
 the bug.
 
-### B-11 — Place enrichment uses a bare `create_task` — same defect class as B-1/B-4
+### ~~B-11 — Place enrichment uses a bare `create_task`~~ · **fixed 2026-09-03**
 
 Both enrichment triggers spawn `_enrich_place` without retaining a reference:
 
@@ -178,12 +180,13 @@ Worth fixing alongside: the two call sites are copy-paste of each other, and the
 helper wants a concurrency bound like the extraction semaphore, since a bulk import could
 otherwise fire unbounded outbound Jina fetches.
 
-**Severity:** medium — silent, permanent loss of enrichment (summary, address, area,
-category) and the Chroma embedding that `search_places` depends on, so an affected place
-is also invisible to places RAG. Timing-dependent, so it fails intermittently rather than
-reproducibly. *(severity inferred, not stated by the user)*
+**Fixed:** `spawn_enrichment` in `app/routers/places.py` retains a strong reference until
+the task completes, mirroring `_spawn_extraction`; both call sites use it. Concurrency is
+bounded at 4 so a bulk import cannot fire unlimited outbound Jina fetches. Regression
+tests in `tests/test_memory.py`. Every remaining `asyncio.create_task` in `app/` is now
+either inside a spawn helper or awaited in scope.
 
-### B-10 — `create_trip` is not idempotent; the agent duplicated a trip
+### ~~B-10 — `create_trip` is not idempotent~~ · **fixed 2026-09-03**
 
 Observed: asking "Did you save it?" produced a second `create_trip` call — and a second
 Unionville / September 5 row — rather than a `get_trips` check. Confirmed by the user,
@@ -217,19 +220,26 @@ The planner writes trips through its own path (`app/planning/graph.py:187`), so 
 likely reproducible on both architectures and the guard belongs somewhere both share
 rather than in `tools.py` alone.
 
-Fix at the executor, not the prompt: look up an existing trip by normalized
-destination + dates and return the existing record (`"action": "trip_already_exists"`) so
-the agent reports "already saved" instead of inserting. Prompt wording only lowers the
-probability; the executor check removes it. Worth also asking whether the DB should carry
-a uniqueness constraint at all, given "two real trips to the same place on the same dates"
-is not a case worth supporting yet.
+**Fixed** at both layers. `_execute_create_trip` now matches an existing trip on
+destination + dates and returns `"action": "trip_already_exists"` with the existing record
+instead of inserting; it reuses `app/utils.dest_matches`, the same loose matcher the
+planner's persist step already used, so 'Unionville' matches 'Unionville, Markham,
+Ontario' while 'Rome' does not match 'New Rome'. Same place with genuinely different dates
+is still a new trip. The prompt half (call `get_trips` first) shipped in `fe260be`.
+
+Also fixed a consequence: `conversations.py` forwarded any action to the client, so a
+no-op would have rendered the "Trip saved/updated" card. It now only emits a card for
+`trip_created` / `trip_updated`.
+
+Still open, deliberately: no DB-level uniqueness constraint. The guard is at the tool
+boundary, so a direct `POST /api/trips` can still duplicate.
 
 **Severity:** medium-high — silent data duplication in the core object of the product.
 User-visible, needs manual cleanup, and it corrupts any per-trip retrieval that assumes
 one row per trip.
 *(severity inferred, not stated by the user)*
 
-### B-9 — Destructive deletes have no confirmation step
+### ~~B-9 — Destructive deletes have no confirmation step~~ · **fixed 2026-09-03**
 
 Clicking the `×` on a trip card calls `deleteTrip` immediately
 (`frontend/src/app/(app)/trips/page.tsx:61`) — one stray click destroys the trip and,
@@ -239,12 +249,11 @@ Not limited to trips: there is no `confirm()` anywhere in the frontend, so journ
 entries, saved places, and connected links all delete on a single unguarded click too.
 Trips are the most consequential because the delete cascades.
 
-There is also no undo, so the click is the whole safety story. Worth solving once with a
-shared confirm dialog rather than per-call-site, since Chakra v3 ships a `Dialog`
-primitive the app does not use yet.
-
-**Severity:** medium — silent, unrecoverable user data loss from a single misclick.
-*(severity inferred, not stated by the user)*
+**Fixed** with one shared `useConfirm` hook (`frontend/src/components/confirm-dialog.tsx`)
+wired into all seven delete sites — trips, journal entries, saved places, connected links,
+and the three conversation deletes. Each dialog names what else disappears (a trip takes
+its journal entries and saved places with it) rather than asking a generic "are you sure".
+Still no undo; confirmation is the only guard.
 
 ### B-5 — Journal extraction leaks cost attribution
 

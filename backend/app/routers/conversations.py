@@ -403,7 +403,9 @@ async def send_message(
                     if tc.function.name in ("create_trip", "update_trip"):
                         try:
                             parsed = json.loads(tool_result)
-                            if "action" in parsed:
+                            # Only surface a card for real writes. `trip_already_exists`
+                            # is a no-op result (B-10) and must not render as "saved".
+                            if parsed.get("action") in ("trip_created", "trip_updated"):
                                 trip_action = parsed
                         except Exception:
                             pass

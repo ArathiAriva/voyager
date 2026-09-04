@@ -92,3 +92,57 @@ async def test_list_trips_returns_all(client: AsyncClient):
         })
     resp = await client.get("/api/trips")
     assert len(resp.json()) == 3
+
+
+# ── create_trip idempotency (B-10) ──────────────────────────────────────────
+
+async def _create_via_tool(db_session, **overrides):
+    import json
+    from app.tools import _execute_create_trip
+
+    args = {
+        "destination": "Unionville, Markham, Ontario",
+        "dates": "September 5, 2025",
+        "status": "upcoming",
+        "emoji": "🍂",
+    }
+    args.update(overrides)
+    return json.loads(await _execute_create_trip(args, db_session))
+
+
+async def test_create_trip_tool_does_not_duplicate(db_session):
+    """B-10: asking 'did you save it?' made the model call create_trip again, which
+    inserted a second row. The second call must return the existing trip instead."""
+    from sqlalchemy import select
+    from app.models.orm import TripORM
+
+    first = await _create_via_tool(db_session)
+    assert first["action"] == "trip_created"
+
+    second = await _create_via_tool(db_session)
+    assert second["action"] == "trip_already_exists"
+    assert second["trip"]["id"] == first["trip"]["id"]
+
+    rows = (await db_session.execute(select(TripORM))).scalars().all()
+    assert len(rows) == 1
+
+
+async def test_create_trip_tool_matches_loosely_on_destination(db_session):
+    """'Unionville' and 'Unionville, Markham, Ontario' are the same trip."""
+    first = await _create_via_tool(db_session)
+    second = await _create_via_tool(db_session, destination="Unionville")
+    assert second["action"] == "trip_already_exists"
+    assert second["trip"]["id"] == first["trip"]["id"]
+
+
+async def test_create_trip_tool_allows_different_dates(db_session):
+    """Same place, genuinely different dates is a different trip -- still allowed."""
+    await _create_via_tool(db_session)
+    second = await _create_via_tool(db_session, dates="December 2026")
+    assert second["action"] == "trip_created"
+
+
+async def test_create_trip_tool_allows_different_destination(db_session):
+    await _create_via_tool(db_session)
+    second = await _create_via_tool(db_session, destination="Kyoto, Japan")
+    assert second["action"] == "trip_created"

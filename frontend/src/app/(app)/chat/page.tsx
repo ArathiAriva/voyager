@@ -14,6 +14,7 @@ import {
   type Message,
   type Trip,
 } from "@/lib/api";
+import { useConfirm } from "@/components/confirm-dialog";
 
 function TripActionCard({ trip, action }: { trip: Trip; action: "trip_created" | "trip_updated" }) {
   const router = useRouter();
@@ -62,6 +63,7 @@ function TripActionCard({ trip, action }: { trip: Trip; action: "trip_created" |
 }
 
 export default function ChatPage() {
+  const { confirm, dialog } = useConfirm();
   const [conversations, setConversations] = useState<ConversationSummary[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
@@ -101,6 +103,12 @@ export default function ChatPage() {
 
   async function handleDelete(id: string, e: React.MouseEvent) {
     e.stopPropagation();
+    const ok = await confirm({
+      title: "Delete this conversation?",
+      body: "The conversation and its messages will be removed. Memories already extracted from it are kept. This cannot be undone.",
+      confirmLabel: "Delete chat",
+    });
+    if (!ok) return;
     await deleteConversation(id);
     setConversations((prev) => prev.filter((c) => c.id !== id));
     if (activeId === id) {
@@ -160,6 +168,7 @@ export default function ChatPage() {
 
   return (
     <Flex h="100vh">
+      {dialog}
       {/* Conversation list panel */}
       <Flex
         direction="column"

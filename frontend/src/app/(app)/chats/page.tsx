@@ -9,6 +9,7 @@ import {
   deleteConversation,
   type ConversationSummary,
 } from "@/lib/api";
+import { useConfirm } from "@/components/confirm-dialog";
 
 function formatDate(iso: string): string {
   const d = new Date(iso);
@@ -23,6 +24,7 @@ function formatDate(iso: string): string {
 
 export default function ChatsPage() {
   const router = useRouter();
+  const { confirm, dialog } = useConfirm();
   const [conversations, setConversations] = useState<ConversationSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
@@ -46,12 +48,19 @@ export default function ChatsPage() {
 
   async function handleDelete(id: string, e: React.MouseEvent) {
     e.stopPropagation();
+    const ok = await confirm({
+      title: "Delete this conversation?",
+      body: "The conversation and its messages will be removed. Memories already extracted from it are kept. This cannot be undone.",
+      confirmLabel: "Delete chat",
+    });
+    if (!ok) return;
     await deleteConversation(id);
     setConversations((prev) => prev.filter((c) => c.id !== id));
   }
 
   return (
     <Flex direction="column" flex={1} minH="100vh" bg="bg.page">
+      {dialog}
       {/* Header */}
       <Box px={8} pt={10} pb={6} borderBottom="1px solid" borderColor="border.default">
         <Flex align="center" justify="space-between">

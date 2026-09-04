@@ -15,6 +15,7 @@ from datetime import datetime, timezone
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.orm import TripORM
+from app.utils import dest_matches
 from app import memory
 
 logger = logging.getLogger("voyager.tools")
@@ -273,7 +274,45 @@ TOOL_SCHEMAS = [
 
 # ── Executors (called when the LLM fires a tool) ─────────────────────────────
 
+def _trip_payload(trip: TripORM) -> dict:
+    return {
+        "id": trip.id,
+        "destination": trip.destination,
+        "dates": trip.dates,
+        "status": trip.status,
+        "emoji": trip.emoji,
+        "summary": trip.summary,
+        "tags": trip.tags,
+    }
+
+
 async def _execute_create_trip(args: dict, session: AsyncSession) -> str:
+    # B-10: the model re-calls create_trip when asked "did you save it?", which used to
+    # insert a second row. The prompt tells it to check get_trips first, but the guard
+    # cannot live only there -- return the existing trip instead of duplicating it.
+    # The planner's persist step already does this via dest_matches; this brings the
+    # tool path in line.
+    destination = args["destination"]
+    dates = (args.get("dates") or "").strip().lower()
+    existing = (await session.execute(select(TripORM))).scalars().all()
+    for candidate in existing:
+        if not dest_matches(candidate.destination, destination):
+            continue
+        if dates and (candidate.dates or "").strip().lower() != dates:
+            continue
+        logger.info(
+            "Tool create_trip: matched existing trip %s (%s) -- not creating a duplicate",
+            candidate.id[:8], candidate.destination,
+        )
+        return json.dumps({
+            "action": "trip_already_exists",
+            "note": (
+                "A matching trip is already saved. Tell the user it is already there "
+                "rather than saving again; use update_trip to change it."
+            ),
+            "trip": _trip_payload(candidate),
+        })
+
     trip = TripORM(
         id=str(uuid.uuid4()),
         destination=args["destination"],
@@ -287,18 +326,7 @@ async def _execute_create_trip(args: dict, session: AsyncSession) -> str:
     await session.commit()
     await session.refresh(trip)
     logger.info("Tool create_trip: created trip %s (%s)", trip.id[:8], trip.destination)
-    return json.dumps({
-        "action": "trip_created",
-        "trip": {
-            "id": trip.id,
-            "destination": trip.destination,
-            "dates": trip.dates,
-            "status": trip.status,
-            "emoji": trip.emoji,
-            "summary": trip.summary,
-            "tags": trip.tags,
-        },
-    })
+    return json.dumps({"action": "trip_created", "trip": _trip_payload(trip)})
 
 
 async def _execute_update_trip(args: dict, session: AsyncSession) -> str:
@@ -330,7 +358,7 @@ async def _execute_update_trip(args: dict, session: AsyncSession) -> str:
 async def _execute_save_place(args: dict, session: AsyncSession) -> str:
     import asyncio
     from app.models.orm import SavedPlaceORM
-    from app.routers.places import _enrich_place
+    from app.routers.places import spawn_enrichment
     from app.utils import fetch_og_metadata
     from datetime import datetime, timezone
 
@@ -366,7 +394,7 @@ async def _execute_save_place(args: dict, session: AsyncSession) -> str:
     memory.store_saved_place(place.id, trip_id, trip.destination, place.name, place.category, embed_text)
 
     if place.url and not is_maps_url:
-        asyncio.create_task(_enrich_place(place.id, place.url, trip.destination))
+        spawn_enrichment(place.id, place.url, trip.destination)
 
     logger.info("Tool save_place: saved place=%s (%s) for trip=%s", place.id[:8], place.name, trip_id[:8])
     return json.dumps({"action": "place_saved", "place_id": place.id, "name": place.name})

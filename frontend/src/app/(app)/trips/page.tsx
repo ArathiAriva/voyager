@@ -7,6 +7,7 @@ import {
   Button, Input, Textarea, Select, Portal, createListCollection,
 } from "@chakra-ui/react";
 import { fetchTrips, createTrip, deleteTrip, type Trip, type TripCreate } from "@/lib/api";
+import { useConfirm } from "@/components/confirm-dialog";
 
 const STATUS_OPTIONS = createListCollection({
   items: [
@@ -28,6 +29,7 @@ const EMPTY_FORM: TripCreate = {
 
 export default function TripsPage() {
   const router = useRouter();
+  const { confirm, dialog } = useConfirm();
   const [trips, setTrips] = useState<Trip[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -60,6 +62,13 @@ export default function TripsPage() {
 
   async function handleDelete(e: React.MouseEvent, id: string) {
     e.stopPropagation();
+    const trip = trips.find((t) => t.id === id);
+    const ok = await confirm({
+      title: "Delete this trip?",
+      body: `${trip?.destination ?? "This trip"} will be removed, along with its journal entries and saved places. This cannot be undone.`,
+      confirmLabel: "Delete trip",
+    });
+    if (!ok) return;
     setDeletingId(id);
     try {
       await deleteTrip(id);
@@ -73,6 +82,7 @@ export default function TripsPage() {
 
   return (
     <Box p={10}>
+      {dialog}
       <VStack align="start" gap={8} w="full">
         <HStack justify="space-between" w="full" align="end">
           <Box>

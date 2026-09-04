@@ -245,6 +245,51 @@ def test_spawn_extraction_keeps_a_strong_reference():
     asyncio.run(scenario())
 
 
+# ── Place enrichment task lifetime (B-11) ───────────────────────────────────
+
+def test_spawn_enrichment_keeps_a_strong_reference():
+    """B-11: same defect class as B-1. Both enrichment call sites used a bare
+    create_task, so the task could be GC'd mid-fetch -- leaving the place stuck at
+    enrichment_status='pending' with no summary and no Chroma embedding, and so
+    invisible to search_places."""
+    import asyncio
+    from app.routers import places
+
+    started = asyncio.Event()
+    release = asyncio.Event()
+
+    async def fake_enrich(place_id, url, destination):
+        started.set()
+        await release.wait()
+
+    async def scenario():
+        original = places._enrich_place
+        places._enrich_place = fake_enrich
+        before = set(places._enrichment_tasks)
+        try:
+            places.spawn_enrichment("p1", "https://example.com", "Kyoto, Japan")
+            await started.wait()
+            added = set(places._enrichment_tasks) - before
+            assert len(added) == 1
+            release.set()
+            await asyncio.sleep(0)
+            await asyncio.sleep(0)
+            assert not (set(places._enrichment_tasks) & added)
+        finally:
+            places._enrich_place = original
+
+    asyncio.run(scenario())
+
+
+def test_enrichment_concurrency_is_bounded():
+    """A bulk import must not fire unlimited outbound Jina fetches at once."""
+    import asyncio
+    from app.routers import places
+
+    assert places._enrichment_semaphore._value == places._ENRICHMENT_CONCURRENCY
+    assert places._ENRICHMENT_CONCURRENCY <= 8
+
+
 # ── search_places tolerates a missing `query` ───────────────────────────────
 
 def test_execute_search_places_without_query_does_not_raise(isolated_places):

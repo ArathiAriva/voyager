@@ -12,6 +12,7 @@ import {
   type Message,
   type Trip,
 } from "@/lib/api";
+import { useConfirm } from "@/components/confirm-dialog";
 
 function TripActionCard({ trip, action }: { trip: Trip; action: "trip_created" | "trip_updated" }) {
   const router = useRouter();
@@ -64,6 +65,7 @@ export default function ChatConversationPage() {
   const params = useParams();
   const id = params.id as string;
 
+  const { confirm, dialog } = useConfirm();
   const [messages, setMessages] = useState<Message[]>([]);
   const [title, setTitle] = useState("Chat");
   const [input, setInput] = useState("");
@@ -95,6 +97,12 @@ export default function ChatConversationPage() {
   }, [messages, loading]);
 
   async function handleDelete() {
+    const ok = await confirm({
+      title: "Delete this conversation?",
+      body: "The conversation and its messages will be removed. Memories already extracted from it are kept. This cannot be undone.",
+      confirmLabel: "Delete chat",
+    });
+    if (!ok) return;
     setDeleting(true);
     try {
       await deleteConversation(id);
@@ -151,6 +159,7 @@ export default function ChatConversationPage() {
 
   return (
     <Flex direction="column" h="100vh">
+      {dialog}
       {/* Header */}
       <Box px={8} py={5} borderBottom="1px solid" borderColor="border.default">
         <Flex align="center" gap={3}>
