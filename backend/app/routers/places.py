@@ -35,19 +35,6 @@ extract structured information and respond with JSON only — no prose, no code 
 
 If a field is not present in the content, use null. The summary must be original prose, not copied verbatim."""
 
-CATEGORY_EMOJI = {
-    "restaurant": "🍽️",
-    "cafe": "☕",
-    "bar": "🍸",
-    "hotel": "🏨",
-    "neighbourhood": "🏘️",
-    "attraction": "🎭",
-    "shop": "🛍️",
-    "beach": "🏖️",
-    "other": "📍",
-}
-
-
 async def _get_trip_or_404(trip_id: str, session: AsyncSession) -> TripORM:
     trip = await session.get(TripORM, trip_id)
     if not trip:

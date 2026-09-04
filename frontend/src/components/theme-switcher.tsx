@@ -3,11 +3,12 @@
 import { HStack, Box, Text } from "@chakra-ui/react";
 import { useTheme } from "@/lib/theme-context";
 import type { ThemePreference } from "@/lib/theme";
+import { MonitorIcon, SunIcon, MoonIcon, type IconProps } from "@/components/icons";
 
-const OPTIONS: { value: ThemePreference; label: string; icon: string }[] = [
-  { value: "system", label: "System", icon: "💻" },
-  { value: "light",  label: "Light",  icon: "☀️" },
-  { value: "dark",   label: "Dark",   icon: "🌙" },
+const OPTIONS: { value: ThemePreference; label: string; Icon: (p: IconProps) => React.ReactElement }[] = [
+  { value: "system", label: "System", Icon: MonitorIcon },
+  { value: "light",  label: "Light",  Icon: SunIcon },
+  { value: "dark",   label: "Dark",   Icon: MoonIcon },
 ];
 
 export function ThemeSwitcher() {
@@ -37,7 +38,7 @@ export function ThemeSwitcher() {
             transition="all 0.15s"
             _hover={{ borderColor: "accent.active", color: "text.primary" }}
           >
-            <Text fontSize="sm" lineHeight="1">{opt.icon}</Text>
+            <Box display="flex" alignItems="center"><opt.Icon /></Box>
             <Text>{opt.label}</Text>
           </Box>
         );

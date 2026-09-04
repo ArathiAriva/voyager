@@ -8,6 +8,7 @@ import {
 } from "@chakra-ui/react";
 import { fetchTrips, createTrip, deleteTrip, type Trip, type TripCreate } from "@/lib/api";
 import { useConfirm } from "@/components/confirm-dialog";
+import { CloseIcon } from "@/components/icons";
 
 const STATUS_OPTIONS = createListCollection({
   items: [
@@ -148,7 +149,7 @@ export default function TripsPage() {
                       textTransform="uppercase"
                       letterSpacing="0.05em"
                     >
-                      {trip.status === "active" ? "🟢 Active" : trip.status}
+                      {trip.status === "active" ? "Active" : trip.status}
                     </Badge>
                     <Button
                       size="xs"
@@ -160,7 +161,7 @@ export default function TripsPage() {
                       aria-label="Delete trip"
                       px={1}
                     >
-                      ✕
+                      <CloseIcon />
                     </Button>
                   </HStack>
                 </HStack>
@@ -270,7 +271,7 @@ export default function TripsPage() {
                         colorPalette={form.status === s ? (s === "active" ? "green" : "blue") : "gray"}
                         onClick={() => setForm((f) => ({ ...f, status: s }))}
                       >
-                        {s === "upcoming" ? "Upcoming" : s === "active" ? "🟢 Active" : "Past"}
+                        {s === "upcoming" ? "Upcoming" : s === "active" ? "Active" : "Past"}
                       </Button>
                     ))}
                   </HStack>

@@ -9,6 +9,7 @@ import {
   deleteConversation,
   type ConversationSummary,
 } from "@/lib/api";
+import { CompassIcon } from "@/components/icons";
 import { useConfirm } from "@/components/confirm-dialog";
 
 function formatDate(iso: string): string {
@@ -100,7 +101,7 @@ export default function ChatsPage() {
           </Flex>
         ) : conversations.length === 0 ? (
           <Flex direction="column" align="center" justify="center" pt={24} gap={3}>
-            <Text fontSize="4xl">🧭</Text>
+            <Box color="text.muted" display="flex" justifyContent="center"><CompassIcon size={30} /></Box>
             <Text fontSize="lg" fontWeight="700" letterSpacing="-0.02em" color="text.bright">
               No chats yet
             </Text>

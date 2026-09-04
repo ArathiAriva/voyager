@@ -9,26 +9,27 @@ import {
   type PlanningRunDetail,
   type PlanningStep,
 } from "@/lib/api";
+import { CompassIcon } from "@/components/icons";
 
 /** Each graph node's role, so the timeline reads as a conversation between agents. */
-const NODE_META: Record<string, { label: string; role: string; icon: string }> = {
-  load_context: { label: "Context loader", role: "Pulls preferences, past trips and saved places from memory", icon: "🧠" },
-  classify_intent: { label: "Orchestrator", role: "Decides whether this is a full plan, a revision, or needs clarification", icon: "🧭" },
-  clarify: { label: "Clarifier", role: "Asks the user for missing information", icon: "❓" },
-  build_brief: { label: "Brief builder", role: "Turns the request into a structured brief the researchers share", icon: "📋" },
-  activities_researcher: { label: "Activities researcher", role: "Finds things to do", icon: "🎭" },
-  food_researcher: { label: "Food researcher", role: "Finds places to eat and drink", icon: "🍽️" },
-  logistics_researcher: { label: "Logistics researcher", role: "Transport, timing and getting around", icon: "🚇" },
-  accommodation_researcher: { label: "Accommodation researcher", role: "Where to stay", icon: "🏨" },
-  optimizer: { label: "Optimizer", role: "Clusters everything geographically into days", icon: "🗺️" },
-  critic: { label: "Critic", role: "Scores the draft and raises issues", icon: "⚖️" },
-  targeted_revision: { label: "Reviser", role: "Re-runs only the domains the critic objected to", icon: "🔁" },
-  assemble_reply: { label: "Reply assembler", role: "Writes the final response to the user", icon: "✍️" },
-  persist_itinerary: { label: "Persister", role: "Saves the itinerary to the trip", icon: "💾" },
+const NODE_META: Record<string, { label: string; role: string }> = {
+  load_context: { label: "Context loader", role: "Pulls preferences, past trips and saved places from memory" },
+  classify_intent: { label: "Orchestrator", role: "Decides whether this is a full plan, a revision, or needs clarification" },
+  clarify: { label: "Clarifier", role: "Asks the user for missing information" },
+  build_brief: { label: "Brief builder", role: "Turns the request into a structured brief the researchers share" },
+  activities_researcher: { label: "Activities researcher", role: "Finds things to do" },
+  food_researcher: { label: "Food researcher", role: "Finds places to eat and drink" },
+  logistics_researcher: { label: "Logistics researcher", role: "Transport, timing and getting around" },
+  accommodation_researcher: { label: "Accommodation researcher", role: "Where to stay" },
+  optimizer: { label: "Optimizer", role: "Clusters everything geographically into days" },
+  critic: { label: "Critic", role: "Scores the draft and raises issues" },
+  targeted_revision: { label: "Reviser", role: "Re-runs only the domains the critic objected to" },
+  assemble_reply: { label: "Reply assembler", role: "Writes the final response to the user" },
+  persist_itinerary: { label: "Persister", role: "Saves the itinerary to the trip" },
 };
 
 function meta(node: string) {
-  return NODE_META[node] ?? { label: node, role: "", icon: "•" };
+  return NODE_META[node] ?? { label: node, role: "" };
 }
 
 function fmtDuration(ms: number | null | undefined): string {
@@ -76,7 +77,6 @@ function StepRow({ step, isLast }: { step: PlanningStep; isLast: boolean }) {
         >
           <HStack justify="space-between" gap={3} align="start">
             <HStack gap={2.5} align="start" minW={0}>
-              <Text fontSize="lg" lineHeight="1.2" flexShrink={0}>{m.icon}</Text>
               <Box minW={0}>
                 <HStack gap={2} flexWrap="wrap">
                   <Text fontSize="sm" fontWeight="600">{m.label}</Text>
@@ -166,7 +166,7 @@ export default function PlanningPage() {
 
         {runs.length === 0 ? (
           <Box py={12} textAlign="center" border="1px dashed" borderColor="border.muted" borderRadius="xl">
-            <Text fontSize="3xl" mb={2}>🧭</Text>
+            <Box color="text.muted" display="flex" justifyContent="center" mb={2}><CompassIcon size={26} /></Box>
             <Text fontSize="sm" fontWeight="600">No planning runs yet</Text>
             <Text fontSize="xs" color="text.secondary" mt={1} maxW="46ch" mx="auto">
               Ask Voyager to plan a trip — something like &ldquo;plan my 3 days in Lisbon&rdquo;.

@@ -14,6 +14,7 @@ import {
   type Message,
   type Trip,
 } from "@/lib/api";
+import { CompassIcon, CheckIcon } from "@/components/icons";
 import { useConfirm } from "@/components/confirm-dialog";
 
 function TripActionCard({ trip, action }: { trip: Trip; action: "trip_created" | "trip_updated" }) {
@@ -268,7 +269,7 @@ export default function ChatPage() {
           {!activeId && (
             <Flex h="full" align="center" justify="center">
               <Box textAlign="center">
-                <Text fontSize="3xl" mb={3}>🧭</Text>
+                <Box color="text.muted" display="flex" justifyContent="center" mb={3}><CompassIcon size={26} /></Box>
                 <Text color="text.primary" fontSize="lg" fontWeight="700" letterSpacing="-0.02em" mb={1}>Where to next?</Text>
                 <Text color="text.secondary" fontSize="sm">Start a new chat or pick one from the left</Text>
               </Box>
@@ -284,7 +285,7 @@ export default function ChatPage() {
           {activeId && !loadingConversation && messages.length === 0 && (
             <Flex h="full" align="center" justify="center">
               <Box textAlign="center">
-                <Text fontSize="3xl" mb={3}>🧭</Text>
+                <Box color="text.muted" display="flex" justifyContent="center" mb={3}><CompassIcon size={26} /></Box>
                 <Text color="text.primary" fontSize="lg" fontWeight="700" letterSpacing="-0.02em" mb={1}>Where are we going?</Text>
                 <Text color="text.secondary" fontSize="sm">Ask me anything about a destination.</Text>
               </Box>
@@ -309,7 +310,7 @@ export default function ChatPage() {
                     justifyContent="center"
                     flexShrink={0}
                   >
-                    <Text fontSize="xs">🧭</Text>
+                    <CompassIcon size={13} />
                   </Box>
                 )}
                 <Box
@@ -356,13 +357,13 @@ export default function ChatPage() {
                 justifyContent="center"
                 flexShrink={0}
               >
-                <Text fontSize="xs">🧭</Text>
+                <CompassIcon size={13} />
               </Box>
               <Box bg="bubble.assistant" px={5} py={3.5} borderRadius="2xl" borderBottomLeftRadius="sm" boxShadow="0 2px 12px rgba(0,0,0,0.18)" minW="200px">
                 <VStack align="stretch" gap={1.5}>
                   {steps.slice(0, -1).map((label, i) => (
                     <HStack key={i} gap={2}>
-                      <Text fontSize="xs" color="accent.active" flexShrink={0}>✓</Text>
+                      <Box color="accent.active" flexShrink={0} display="flex"><CheckIcon size={12} /></Box>
                       <Text fontSize="sm" color="text.secondary" opacity={0.6}>{label}</Text>
                     </HStack>
                   ))}

@@ -9,6 +9,7 @@ import {
   type UsageCall,
   type UsageBreakdownRow,
 } from "@/lib/api";
+import { ChartIcon } from "@/components/icons";
 
 const WINDOWS = [7, 30, 90] as const;
 
@@ -140,7 +141,7 @@ export default function UsagePage() {
 
         {isEmpty && !loading && (
           <Box py={16} w="full" textAlign="center" color="text.secondary">
-            <Text fontSize="3xl" mb={3}>📊</Text>
+            <Box color="text.muted" display="flex" justifyContent="center" mb={3}><ChartIcon size={26} /></Box>
             <Text fontSize="sm" fontWeight="medium">No LLM calls recorded yet.</Text>
             <Text fontSize="sm" mt={1}>Chat with Voyager or plan a trip and usage will show up here.</Text>
           </Box>

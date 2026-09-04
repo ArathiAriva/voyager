@@ -6,7 +6,9 @@ import {
   Box, Flex, HStack, VStack, Text, Badge, Button, Textarea, Input,
   Spinner, Portal, Tabs,
 } from "@chakra-ui/react";
-import { ChevronLeftIcon, PencilIcon } from "@/components/icons";
+import {
+  ChevronLeftIcon, PencilIcon, CloseIcon, BookIcon, MapIcon, PinIcon, LinkIcon,
+} from "@/components/icons";
 import { useConfirm } from "@/components/confirm-dialog";
 import {
   fetchTrip, fetchJournalEntries, createJournalEntry, deleteJournalEntry,
@@ -342,7 +344,7 @@ export default function TripDetailPage() {
                     colorPalette={editForm.status === s ? (s === "active" ? "green" : "blue") : "gray"}
                     onClick={() => setEditForm((f) => ({ ...f, status: s }))}
                   >
-                    {s === "upcoming" ? "Upcoming" : s === "active" ? "🟢 Active" : "Past"}
+                    {s === "upcoming" ? "Upcoming" : s === "active" ? "Active" : "Past"}
                   </Button>
                 ))}
               </HStack>
@@ -390,7 +392,7 @@ export default function TripDetailPage() {
                 borderRadius="full"
                 px={2}
               >
-                {trip.status === "active" ? "🟢 Active" : trip.status}
+                {trip.status === "active" ? "Active" : trip.status}
               </Badge>
             </HStack>
             <Text fontSize="sm" color="text.secondary">{trip.dates}</Text>
@@ -475,7 +477,7 @@ export default function TripDetailPage() {
 
           {entries.length === 0 && !showEntryForm && (
             <Box py={12} textAlign="center" color="text.secondary">
-              <Text fontSize="3xl" mb={2}>📓</Text>
+              <Box color="text.muted" display="flex" justifyContent="center" mb={2}><BookIcon size={26} /></Box>
               <Text fontSize="sm">Start writing about your trip.</Text>
             </Box>
           )}
@@ -508,7 +510,7 @@ export default function TripDetailPage() {
                   onClick={() => handleDeleteEntry(entry.id)}
                   aria-label="Delete entry"
                 >
-                  ✕
+                  <CloseIcon />
                 </Button>
               </HStack>
               <Text fontSize="sm" color="text.dim" whiteSpace="pre-wrap" lineHeight="tall">
@@ -524,7 +526,7 @@ export default function TripDetailPage() {
         <VStack align="stretch" gap={4}>
           {(!trip.itinerary || trip.itinerary.length === 0) ? (
             <Box py={12} textAlign="center" color="text.secondary">
-              <Text fontSize="3xl" mb={3}>🗺️</Text>
+              <Box color="text.muted" display="flex" justifyContent="center" mb={3}><MapIcon size={26} /></Box>
               <Text fontSize="sm" mb={4}>No itinerary yet.</Text>
               <Box
                 bg="bg.subtle"
@@ -678,7 +680,7 @@ export default function TripDetailPage() {
 
           {places.length === 0 && !showPlaceForm && (
             <Box py={12} textAlign="center" color="text.secondary">
-              <Text fontSize="3xl" mb={2}>📍</Text>
+              <Box color="text.muted" display="flex" justifyContent="center" mb={2}><PinIcon size={26} /></Box>
               <Text fontSize="sm" mb={1}>Save restaurants, hotels, and spots to visit.</Text>
               <Text fontSize="xs" color="text.dim">You can also ask Voyager in chat to save places for you.</Text>
             </Box>
@@ -686,11 +688,6 @@ export default function TripDetailPage() {
 
           <Flex gap={4} flexWrap="wrap">
             {places.map((place) => {
-              const categoryEmoji: Record<string, string> = {
-                restaurant: "🍽️", cafe: "☕", bar: "🍸", hotel: "🏨",
-                "street food": "🍢", neighbourhood: "🏘️", attraction: "🎭", shop: "🛍️", beach: "🏖️", other: "📍",
-              };
-              const emoji = categoryEmoji[place.category] ?? "📍";
               return (
                 <Box
                   key={place.id}
@@ -715,8 +712,9 @@ export default function TripDetailPage() {
                       style={{ width: "100%", height: "120px", objectFit: "cover" }}
                     />
                   ) : (
-                    <Flex h="120px" align="center" justify="center" bg="bg.subtle" fontSize="3xl">
-                      {emoji}
+                    <Flex h="120px" align="center" justify="center" bg="bg.subtle" direction="column" gap={1.5}>
+                      <Box color="text.muted"><PinIcon size={20} /></Box>
+                      <Text fontSize="xs" color="text.muted" textTransform="capitalize">{place.category}</Text>
                     </Flex>
                   )}
                   <Box p={3}>
@@ -755,7 +753,7 @@ export default function TripDetailPage() {
                       onClick={(e) => { e.stopPropagation(); handleDeletePlace(place.id); }}
                       aria-label="Remove place"
                     >
-                      ✕
+                      <CloseIcon />
                     </Button>
                   </HStack>
                 </Box>
@@ -800,7 +798,7 @@ export default function TripDetailPage() {
                         colorPalette={contentType === t ? "blue" : "gray"}
                         onClick={() => setContentType(t)}
                       >
-                        {t === "album" ? "📷 Album" : t === "instagram" ? "📸 Instagram" : t === "tiktok" ? "🎵 TikTok" : t === "blog" ? "📝 Blog" : "🔗 Other"}
+                        {t === "album" ? "Album" : t === "instagram" ? "Instagram" : t === "tiktok" ? "TikTok" : t === "blog" ? "Blog" : "Other"}
                       </Button>
                     ))}
                   </HStack>
@@ -822,7 +820,7 @@ export default function TripDetailPage() {
 
           {content.length === 0 && !showContentForm && (
             <Box py={12} textAlign="center" color="text.secondary">
-              <Text fontSize="3xl" mb={2}>🔗</Text>
+              <Box color="text.muted" display="flex" justifyContent="center" mb={2}><LinkIcon size={26} /></Box>
               <Text fontSize="sm">Connect photos, posts, and links from this trip.</Text>
             </Box>
           )}
@@ -851,7 +849,7 @@ export default function TripDetailPage() {
                   />
                 ) : (
                   <Flex h="120px" align="center" justify="center" bg="bg.subtle" fontSize="3xl">
-                    {item.type === "album" ? "📷" : item.type === "instagram" ? "📸" : item.type === "tiktok" ? "🎵" : item.type === "blog" ? "📝" : "🔗"}
+                    {item.type === "album" ? "Album" : item.type === "instagram" ? "Instagram" : item.type === "tiktok" ? "TikTok" : item.type === "blog" ? "Blog" : "Link"}
                   </Flex>
                 )}
                 <Box p={3}>
@@ -881,7 +879,7 @@ export default function TripDetailPage() {
                     onClick={() => handleDeleteContent(item.id)}
                     aria-label="Remove link"
                   >
-                    ✕
+                    <CloseIcon />
                   </Button>
                 </HStack>
               </Box>
@@ -910,17 +908,15 @@ export default function TripDetailPage() {
                   style={{ width: "100%", height: "200px", objectFit: "cover" }}
                 />
               ) : (
-                <Flex h="140px" align="center" justify="center" bg="bg.subtle" fontSize="5xl">
-                  {({
-                    restaurant: "🍽️", cafe: "☕", bar: "🍸", hotel: "🏨",
-                    "street food": "🍢", neighbourhood: "🏘️", attraction: "🎭", shop: "🛍️", beach: "🏖️", other: "📍",
-                  } as Record<string, string>)[selectedPlace.category] ?? "📍"}
+                <Flex h="140px" align="center" justify="center" bg="bg.subtle" direction="column" gap={2}>
+                  <Box color="text.muted"><PinIcon size={26} /></Box>
+                  <Text fontSize="sm" color="text.muted" textTransform="capitalize">{selectedPlace.category}</Text>
                 </Flex>
               )}
               <Box p={6}>
                 <HStack justify="space-between" align="start" mb={2}>
                   <Text fontSize="xl" fontWeight="bold" color="text.bright" flex={1}>{selectedPlace.name}</Text>
-                  <Button size="xs" variant="ghost" color="text.dim" onClick={() => setSelectedPlace(null)}>✕</Button>
+                  <Button size="xs" variant="ghost" color="text.dim" onClick={() => setSelectedPlace(null)}><CloseIcon /></Button>
                 </HStack>
                 <HStack gap={2} mb={3}>
                   <Badge size="sm" variant="subtle" colorPalette="blue">{selectedPlace.category}</Badge>
@@ -929,7 +925,7 @@ export default function TripDetailPage() {
                   )}
                 </HStack>
                 {selectedPlace.address && (
-                  <Text fontSize="sm" color="text.secondary" mb={3}>📍 {selectedPlace.address}</Text>
+                  <Text fontSize="sm" color="text.secondary" mb={3}>{selectedPlace.address}</Text>
                 )}
                 {selectedPlace.summary && (
                   <Text fontSize="sm" color="text.dim" lineHeight="tall" mb={3}>{selectedPlace.summary}</Text>

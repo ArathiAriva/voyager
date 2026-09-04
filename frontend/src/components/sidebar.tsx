@@ -3,14 +3,17 @@
 import { Box, Flex, Text, VStack } from "@chakra-ui/react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import {
+  ChatIcon, MapIcon, BrainIcon, ChartIcon, TraceIcon, SettingsIcon, CompassIcon,
+} from "@/components/icons";
 
 const navItems = [
-  { label: "Chats", href: "/chats", icon: "💬" },
-  { label: "Trips", href: "/trips", icon: "🗺️" },
-  { label: "Memories", href: "/memories", icon: "🧠" },
-  { label: "Usage", href: "/usage", icon: "📊" },
-  { label: "Traces", href: "/planning", icon: "🔬" },
-  { label: "Settings", href: "/settings", icon: "⚙️" },
+  { label: "Chats", href: "/chats", Icon: ChatIcon },
+  { label: "Trips", href: "/trips", Icon: MapIcon },
+  { label: "Memories", href: "/memories", Icon: BrainIcon },
+  { label: "Usage", href: "/usage", Icon: ChartIcon },
+  { label: "Traces", href: "/planning", Icon: TraceIcon },
+  { label: "Settings", href: "/settings", Icon: SettingsIcon },
 ];
 
 interface SidebarProps {
@@ -45,7 +48,7 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
         {!collapsed && (
           <Box>
             <Text fontSize="xl" fontWeight="800" letterSpacing="-0.04em" lineHeight="1" whiteSpace="nowrap">
-              🧭 Voyager
+              Voyager
             </Text>
             <Text fontSize="xs" color="text.dim" mt={1.5} letterSpacing="0.08em" textTransform="uppercase" fontWeight="500" whiteSpace="nowrap">
               AI Travel Companion
@@ -54,7 +57,7 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
         )}
 
         {collapsed && (
-          <Text fontSize="xl" lineHeight="1" mb={1}>🧭</Text>
+          <Box color="text.bright" mb={1}><CompassIcon size={22} /></Box>
         )}
 
         <Box
@@ -133,7 +136,7 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
                     borderRadius="full"
                   />
                 )}
-                <Text fontSize="base" lineHeight="1">{item.icon}</Text>
+                <Box display="flex" alignItems="center" flexShrink={0}><item.Icon /></Box>
                 {!collapsed && (
                   <Text
                     fontSize="sm"

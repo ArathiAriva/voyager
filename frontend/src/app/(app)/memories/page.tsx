@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { Box, VStack, Text, Grid, Spinner, Flex } from "@chakra-ui/react";
 import { fetchMemories, type Memories } from "@/lib/api";
+import { BrainIcon } from "@/components/icons";
 
 export default function MemoriesPage() {
   const [memories, setMemories] = useState<Memories | null>(null);
@@ -41,7 +42,7 @@ export default function MemoriesPage() {
 
         {isEmpty && (
           <Box py={16} w="full" textAlign="center" color="text.secondary">
-            <Text fontSize="3xl" mb={3}>🧠</Text>
+            <Box color="text.muted" display="flex" justifyContent="center" mb={3}><BrainIcon size={26} /></Box>
             <Text fontSize="sm" fontWeight="medium">No memories yet.</Text>
             <Text fontSize="sm" mt={1}>
               Chat with Voyager or write journal entries and memories will build up here.
