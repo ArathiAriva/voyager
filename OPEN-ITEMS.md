@@ -24,15 +24,16 @@ Severity is about consequence if left alone, not effort to fix.
 > decisions and belongs to the product track.
 
 1. **Product flow** — the chat→trip→itinerary path is the current focus. B-9, B-10 and
-   B-11, B-7 and B-3 are all fixed as of 2026-09-03, and the backend suite is green
-   (63 passed). Next: **S-13** (calibrate the quality judge) or the R-1..R-3 refactors.
+   B-11, B-7 and B-3 are all fixed as of 2026-09-03, as are the R-1..R-3 refactors.
+   Backend suite is green (73 passed). Next: **S-13** (calibrate the quality judge) or
+   the retrieval instrumentation.
 2. **S-13** — calibrate the quality judge. Gates any per-node model decision, since that
    verdict would rest entirely on an unmeasured judge. *(~15 hand labels)*
 3. **Retrieval instrumentation** — `retrieval_log` + returning IDs/distances from
    `search_memory`. No labels, no LLM calls, and it is what would have caught B-6 and S-7.
    See [docs/retrieval-quality-spec.md](docs/retrieval-quality-spec.md). *(Phase 4)*
 4. ~~**B-7 / B-3**~~ — both fixed 2026-09-03.
-5. **R-1..R-3** — refactors. R-3 (cost split across two DBs) has the most consequence.
+5. ~~**R-1..R-3**~~ — all three done 2026-09-03.
 
 Not urgent but worth naming: **M-2** is the structural unlock under M-3/M-4/M-5 and the
 open half of B-2 — none of those move until preferences carry provenance.
@@ -291,19 +292,22 @@ is attributed to whatever context was last set.
 
 Not bugs — working code with a rough edge worth smoothing when next in the area.
 
-### R-1 — Researcher tool-arg injection is copy-pasted three ways
+### ~~R-1 — Researcher tool-arg injection is copy-pasted three ways~~ · **done 2026-09-03**
 
 `food.py`, `activities.py`, and `accommodation.py` each carry an identical block
 injecting `destination` into `search_places` args (added with B-6), sitting next to a
 near-identical block injecting `category`. A fourth researcher means a fourth copy, and
 a change to scoping policy means editing three files and hoping they stay in sync.
 
-Worth extracting to something like `app/agents/__init__.py::scope_search_args(args,
-brief, category)` that applies both. Deliberately not done with B-6: that change was
-already touching production retrieval ahead of a baseline run, and bundling a refactor
-would have made it harder to revert cleanly if the scoping turned out wrong.
+**Done:** `app/agents/__init__.py::scope_search_args(args, brief, category=...)`.
 
-### R-2 — `evals/run.py` and `evals/safety_run.py` duplicate harness plumbing
+The three copies had already drifted, which is what the item predicted: food and
+activities defaulted the category (`setdefault`), while accommodation *overwrote* the
+model's choice. That difference is preserved deliberately — accommodation passes
+`force_category=True` — rather than being flattened, since it is plausibly intended.
+Five tests lock in the scoping policy, including the B-6 destination scope.
+
+### ~~R-2 — `evals/run.py` and `evals/safety_run.py` duplicate harness plumbing~~ · **done 2026-09-03**
 
 Both now implement their own `_parse_sse` (including the `event: error` handling ported
 across on 2026-08-23), `_trips_snapshot`, trips-diff, model recording, and manifest
@@ -311,10 +315,15 @@ writing. They drifted once already — the safety runner had error-frame parsing
 before the quality runner did, which is exactly the window where a 402 gets misreported
 as "empty reply".
 
-A shared `evals/_harness.py` would fix the drift risk. Low urgency, but the next time a
-third harness appears (round-2 modes, a mitigation A/B) it should not be a third copy.
+**Done:** `evals/_harness.py` holds `iter_sse_frames` and `parse_error_frame`, and both
+runners' `_parse_sse` are now thin projections over them.
 
-### R-3 — Judge cost accounting lands in the wrong database
+Deliberately *not* merged: `_parse_sse` itself (safety also needs the graph's step
+labels) and `_trips_snapshot` (the two suites need different shapes). Forcing those into
+one signature would make both callers worse. What is shared is the frame-level parsing
+that actually drifted. A test asserts both runners surface the same error frame.
+
+### ~~R-3 — Judge cost accounting lands in the wrong database~~ · **fixed 2026-09-03**
 
 `evals/safety_run.py` and `evals/run.py` call `load_dotenv()` with no argument, so they
 load root `.env` and their judge calls are recorded against whatever `DATABASE_URL` that
@@ -322,10 +331,18 @@ resolves to (`egwene`) — not the profile the backend under test is running
 (`safetyeval`). Verified 2026-08-23: 10 judge calls for a `safetyeval` run were written
 to `egwene.db`'s `usage_log`.
 
-No effect on verdicts, only on cost attribution — but "what did this run cost" is
-currently never answerable from one database, and this project's stated goals include
-cost accounting. Fix is to have the eval scripts resolve the same profile the backend
-uses (a `--profile` flag, or reading it from a backend endpoint).
+**Fixed** by reading it from the backend rather than adding a flag, so the two cannot
+disagree: `/health` now reports the database the server process started with, and both
+harnesses call `adopt_backend_database()` at startup, which re-points
+`app.db` at it via a new `db.reconfigure()`. Each run prints the profile its usage is
+being logged to.
+
+A flag was the alternative and is worse: it lets you *tell* the harness the wrong
+profile. Reading it from the process under test cannot drift.
+
+`app/usage.py` imports `SessionLocal` inside the logging function rather than at module
+scope, so it picks up the rebound engine — verified end to end: a harness started on
+`egwene` redirects to `safetyeval` when the backend reports it.
 
 ---
 

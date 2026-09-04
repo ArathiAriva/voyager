@@ -377,3 +377,140 @@ def test_conversation_extraction_is_concurrency_bounded():
             conv._run_extraction = original
 
     asyncio.run(scenario())
+
+
+# ── researcher scoping policy (R-1, guards B-6) ─────────────────────────────
+
+def test_scope_search_args_defaults_category_and_destination():
+    from app.agents import scope_search_args
+
+    args = scope_search_args({}, {"destination": "Rome, Italy"}, category="restaurant")
+    assert args == {"category": "restaurant", "destination": "Rome, Italy"}
+
+
+def test_scope_search_args_respects_a_model_supplied_category():
+    """food/activities let the model narrow within their domain."""
+    from app.agents import scope_search_args
+
+    args = scope_search_args({"category": "cafe"}, {"destination": "Rome"}, category="restaurant")
+    assert args["category"] == "cafe"
+
+
+def test_scope_search_args_can_force_the_category():
+    """accommodation only ever wants hotels, and overwrote the model's choice."""
+    from app.agents import scope_search_args
+
+    args = scope_search_args({"category": "cafe"}, {"destination": "Rome"},
+                             category="hotel", force_category=True)
+    assert args["category"] == "hotel"
+
+
+def test_scope_search_args_never_overrides_an_explicit_destination():
+    from app.agents import scope_search_args
+
+    args = scope_search_args({"destination": "Trastevere"}, {"destination": "Rome"},
+                             category="restaurant")
+    assert args["destination"] == "Trastevere"
+
+
+def test_scope_search_args_without_a_destination_in_brief():
+    """B-6: no destination scope is better than a wrong one, but the call must not fail."""
+    from app.agents import scope_search_args
+
+    args = scope_search_args({}, {}, category="restaurant")
+    assert "destination" not in args
+    assert args["category"] == "restaurant"
+
+
+# ── eval harness profile adoption (R-3) ─────────────────────────────────────
+
+def test_adopt_backend_database_redirects_the_engine(tmp_path, monkeypatch):
+    """R-3: judge calls are usage-logged by the harness process, which resolved
+    DATABASE_URL from root .env rather than the profile under test -- so a safetyeval
+    run's costs were written to egwene.db. The harness must adopt whatever database
+    the backend reports."""
+    import asyncio
+    import app.db as db
+    from evals._harness import adopt_backend_database, profile_name
+
+    backend_url = f"sqlite+aiosqlite:///{tmp_path}/under_test.db"
+    wrong_url = f"sqlite+aiosqlite:///{tmp_path}/wrong.db"
+    original = db.DB_PATH
+
+    class FakeClient:
+        async def get(self, path):
+            assert path == "/health"
+            class R:
+                @staticmethod
+                def json():
+                    return {"status": "ok", "database_url": backend_url}
+            return R()
+
+    try:
+        db.reconfigure(wrong_url)
+        assert db.DB_PATH == wrong_url
+        adopted = asyncio.run(adopt_backend_database(FakeClient()))
+        assert adopted == backend_url
+        assert db.DB_PATH == backend_url
+    finally:
+        db.reconfigure(original)
+
+
+def test_adopt_backend_database_tolerates_an_older_backend():
+    """A backend that does not report database_url must not break the run."""
+    import asyncio
+    import app.db as db
+    from evals._harness import adopt_backend_database
+
+    class FakeClient:
+        async def get(self, path):
+            class R:
+                @staticmethod
+                def json():
+                    return {"status": "ok"}
+            return R()
+
+    before = db.DB_PATH
+    assert asyncio.run(adopt_backend_database(FakeClient())) is None
+    assert db.DB_PATH == before
+
+
+def test_profile_name_reads_a_label_from_a_database_url():
+    from evals._harness import profile_name
+
+    assert profile_name("sqlite+aiosqlite:///./data/safetyeval.db") == "safetyeval"
+    assert profile_name(None) == "unknown"
+
+
+# ── shared SSE frame parsing (R-2) ──────────────────────────────────────────
+
+SSE_SAMPLE = (
+    "event: step\ndata: {\"label\": \"Researching activities...\"}\n\n"
+    "event: error\ndata: {\"detail\": \"402 insufficient credits\"}\n\n"
+    "event: done\ndata: {\"reply\": \"hi\"}\n"
+)
+
+
+def test_both_harnesses_surface_the_same_error_frame():
+    """R-2: the two runners kept private copies of _parse_sse and drifted -- the
+    safety one read `event: error` a day before the quality one, and in that window a
+    402 was reported as an uninformative 'empty reply'. Both now share the frame
+    parser, so this cannot diverge again."""
+    from evals.run import _parse_sse as quality_parse
+    from evals.safety_run import _parse_sse as safety_parse
+
+    q_done, q_errors = quality_parse(SSE_SAMPLE)
+    s_done, s_steps, s_errors = safety_parse(SSE_SAMPLE)
+
+    assert q_done == s_done == {"reply": "hi"}
+    assert q_errors == s_errors == ["402 insufficient credits"]
+    assert s_steps == ["Researching activities..."]
+
+
+def test_error_frame_falls_back_to_raw_text_when_not_json():
+    from evals.run import _parse_sse as quality_parse
+    from evals.safety_run import _parse_sse as safety_parse
+
+    raw = "event: error\ndata: not json at all\n"
+    assert quality_parse(raw)[1] == ["not json at all"]
+    assert safety_parse(raw)[2] == ["not json at all"]

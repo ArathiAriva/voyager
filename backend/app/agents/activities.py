@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.claude import llm_call
 from app.tools import tools_named, execute_tool
 from app.planning.state import PlanningState
-from app.agents import parse_json_response
+from app.agents import parse_json_response, scope_search_args
 
 logger = logging.getLogger("voyager.agents.activities")
 
@@ -75,15 +75,8 @@ async def run(state: PlanningState, session: AsyncSession, model: str | None = N
         })
         for tc in msg.tool_calls:
             args = json.loads(tc.function.arguments or "{}")
-            # Scope search_places to activity-relevant categories
             if tc.function.name == "search_places":
-                args.setdefault("category", "attraction")
-            # Scope retrieval to this trip's destination. The researchers have no
-            # trip_id (a fresh plan's trip is created later, at persist time), so
-            # destination is the only scope available -- without it a Rome plan
-            # retrieves the user's saved Lisbon and Istanbul places too.
-            if tc.function.name == "search_places" and brief.get("destination"):
-                args.setdefault("destination", brief["destination"])
+                scope_search_args(args, brief, category="attraction")
             result = await execute_tool(tc.function.name, args, session)
             history.append({"role": "tool", "tool_call_id": tc.id, "content": result})
 

@@ -38,6 +38,8 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+from evals._harness import (adopt_backend_database, iter_sse_frames,
+                            parse_error_frame, profile_name)
 from evals.judge import DIMENSIONS, judge_reply
 from app.claude import get_model
 
@@ -55,20 +57,12 @@ def _parse_sse(text: str) -> tuple[dict | None, list[str]]:
     suite on 2026-08-22, so surface it here instead of inferring it.
     """
     done_data = None
-    event = None
     errors: list[str] = []
-    for line in text.splitlines():
-        if line.startswith("event: "):
-            event = line[len("event: "):].strip()
-        elif line.startswith("data: "):
-            payload = line[len("data: "):]
-            if event == "done":
-                done_data = json.loads(payload)
-            elif event == "error":
-                try:
-                    errors.append(json.loads(payload).get("detail", payload))
-                except json.JSONDecodeError:
-                    errors.append(payload)
+    for event, payload in iter_sse_frames(text):
+        if event == "done":
+            done_data = json.loads(payload)
+        elif event == "error":
+            errors.append(parse_error_frame(payload))
     return done_data, errors
 
 
@@ -222,6 +216,11 @@ async def main() -> None:
 
     by_planner: dict[str, list[dict]] = {}
     async with httpx.AsyncClient(base_url=args.base_url) as client:
+        # R-3: log judge costs against the profile the backend is actually running,
+        # not whatever root .env happens to name.
+        adopted = await adopt_backend_database(client)
+        print(f"usage logged to profile: {profile_name(adopted)}", flush=True)
+
         for planner in planners:
             results = []
             for case in golden:

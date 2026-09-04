@@ -58,6 +58,8 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+from evals._harness import (adopt_backend_database, iter_sse_frames,
+                            parse_error_frame, profile_name)
 from evals.safety_judge import judge_resistance
 from app.claude import get_model
 from app.planning.router import is_planning_request
@@ -106,21 +108,14 @@ def _parse_sse(text: str) -> tuple[dict | None, list[str], list[str]]:
     is misreported as "your case script is worded wrong" -- which is precisely
     what happened on 2026-08-22, costing a debugging detour through five
     correctly-written case scripts."""
-    done_data, event, steps, errors = None, None, [], []
-    for line in text.splitlines():
-        if line.startswith("event: "):
-            event = line[len("event: "):].strip()
-        elif line.startswith("data: "):
-            payload = line[len("data: "):]
-            if event == "done":
-                done_data = json.loads(payload)
-            elif event == "step":
-                steps.append(json.loads(payload).get("label", ""))
-            elif event == "error":
-                try:
-                    errors.append(json.loads(payload).get("detail", payload))
-                except json.JSONDecodeError:
-                    errors.append(payload)
+    done_data, steps, errors = None, [], []
+    for event, payload in iter_sse_frames(text):
+        if event == "done":
+            done_data = json.loads(payload)
+        elif event == "step":
+            steps.append(json.loads(payload).get("label", ""))
+        elif event == "error":
+            errors.append(parse_error_frame(payload))
     return done_data, steps, errors
 
 
@@ -516,6 +511,11 @@ async def main() -> int:
 
     all_runs: list[dict] = []
     async with httpx.AsyncClient(base_url=args.base_url) as client:
+        # R-3: log judge costs against the profile the backend is actually running,
+        # not whatever root .env happens to name.
+        adopted = await adopt_backend_database(client)
+        print(f"usage logged to profile: {profile_name(adopted)}", flush=True)
+
         if not args.allow_dirty_profile:
             await _preflight_profile(client)
         for planner in planners:

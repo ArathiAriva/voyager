@@ -3,6 +3,7 @@ load_dotenv()
 
 import logging
 import logging.config
+import os
 
 logging.config.dictConfig({
     "version": 1,
@@ -75,6 +76,17 @@ async def startup() -> None:
             await session.commit()
 
 
+#: Captured at import so /health reports the database this server process actually
+#: started with, not a value some later caller may have rebound (R-3).
+_STARTUP_DATABASE_URL = os.environ.get("DATABASE_URL", "sqlite+aiosqlite:///./voyager.db")
+
+
 @app.get("/health")
 async def health() -> dict[str, str]:
-    return {"status": "ok"}
+    """Liveness, plus which database this process is actually using.
+
+    The eval harnesses need the latter: they run in their own process and used to
+    resolve DATABASE_URL from root `.env`, so judge costs were logged against
+    whichever profile that happened to name rather than the profile under test (R-3).
+    """
+    return {"status": "ok", "database_url": _STARTUP_DATABASE_URL}
