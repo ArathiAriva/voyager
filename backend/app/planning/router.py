@@ -2,11 +2,14 @@
 Planning graph router — detects planning intent and invokes the LangGraph graph.
 """
 
+import itertools
 import logging
+import time
 from collections.abc import Callable, Coroutine
 from typing import Any
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.planning import trace as planning_trace
 from app.planning.graph import planning_graph
 from app.planning.state import PlanningState
 
@@ -40,6 +43,7 @@ async def run_planning_graph(
     session: AsyncSession,
     trip_id: str | None = None,
     emit_step: StepEmitter | None = None,
+    conversation_id: str | None = None,
 ) -> str:
     """Invoke the planning graph and return the final reply string."""
     initial_state: PlanningState = {
@@ -67,9 +71,30 @@ async def run_planning_graph(
 
     logger.info("planning | starting graph for message: %s", user_message[:80])
 
-    final_state = await planning_graph.ainvoke(
-        initial_state,
-        config={"configurable": {"session": session, "emit_step": emit_step}},
+    # Trace the run so it can be inspected afterwards in the Planning tab.
+    run_id = await planning_trace.start_run(conversation_id, user_message)
+    started = time.perf_counter()
+
+    try:
+        final_state = await planning_graph.ainvoke(
+            initial_state,
+            config={"configurable": {
+                "session": session,
+                "emit_step": emit_step,
+                "planning_run_id": run_id,
+                "planning_seq": itertools.count(),
+            }},
+        )
+    except Exception as e:
+        await planning_trace.finish_run(
+            run_id, status="failed", duration_ms=(time.perf_counter() - started) * 1000,
+            error=str(e),
+        )
+        raise
+
+    await planning_trace.finish_run(
+        run_id, status="complete", final_state=final_state,
+        duration_ms=(time.perf_counter() - started) * 1000,
     )
 
     reply = final_state.get("final_reply", "")

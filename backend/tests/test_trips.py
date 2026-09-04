@@ -199,3 +199,76 @@ async def test_places_endpoint_serves_every_valid_category(client: AsyncClient):
     listing = await client.get(f"/api/trips/{trip_id}/places")
     assert listing.status_code == 200, listing.text
     assert len(listing.json()) == len(PLACE_CATEGORIES)
+
+
+# ── planning run traces ─────────────────────────────────────────────────────
+
+def test_summarise_describes_each_agent_by_what_it_produced():
+    """The timeline is only readable if each node's line says something specific;
+    a generic key dump would defeat the point of the page."""
+    from app.planning.trace import summarise
+
+    assert summarise("build_brief", {"brief": {"destination": "Lisbon", "duration_days": 3}}) == "Lisbon · 3 days"
+    assert summarise("critic", {"critique_score": 4, "critique_issues": ["a", "b"]}) == "score 4/5 · 2 issue(s)"
+    assert summarise("food_researcher", {"food": [{"area": "Alfama"}, {"area": "Belem"}]}) == "2 food options across 2 areas"
+    assert summarise("optimizer", {"itinerary_draft": [1, 2, 3], "unplaced_items": []}) == "3 day(s) drafted"
+    assert summarise("load_context", {"user_preferences": ["x"], "saved_places": [], "past_trips": [1]}) \
+        == "1 preferences · 0 saved places · 1 past trips"
+
+
+def test_summarise_never_raises_on_unexpected_shapes():
+    """Tracing is fail-open; a malformed delta must not break a planning run."""
+    from app.planning.trace import summarise
+
+    assert isinstance(summarise("critic", {}), str)
+    assert isinstance(summarise("unknown_node", {"a": 1}), str)
+    assert isinstance(summarise("food_researcher", {"food": "not a list"}), str)
+
+
+def test_planning_trace_records_a_run_and_its_steps(tmp_path):
+    import asyncio
+    import app.db as db
+    from app.models.orm import Base, PlanningRunORM
+    from app.planning import trace as pt
+    from datetime import datetime, timezone
+    from sqlalchemy import select
+    from sqlalchemy.orm import selectinload
+
+    original = db.DB_PATH
+    db.reconfigure(f"sqlite+aiosqlite:///{tmp_path}/planning.db")
+
+    async def scenario():
+        async with db.engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+        run_id = await pt.start_run("conv-1", "plan my 3 days in Lisbon")
+        assert run_id
+        now = datetime.now(timezone.utc)
+        await pt.record_step(run_id, 0, "build_brief", "", {"brief": {"destination": "Lisbon"}}, 10.0, now)
+        await pt.record_step(run_id, 1, "critic", "", {"critique_score": 4, "critique_issues": []}, 20.0, now)
+        await pt.finish_run(run_id, status="complete",
+                            final_state={"brief": {"destination": "Lisbon"}, "critique_score": 4},
+                            duration_ms=1234.0)
+
+        async with db.SessionLocal() as session:
+            run = (await session.execute(
+                select(PlanningRunORM).options(selectinload(PlanningRunORM.steps))
+            )).scalar_one()
+        assert run.status == "complete"
+        assert run.destination == "Lisbon"
+        assert run.critic_score == 4
+        assert [s.node for s in sorted(run.steps, key=lambda s: s.seq)] == ["build_brief", "critic"]
+
+    try:
+        asyncio.run(scenario())
+    finally:
+        db.reconfigure(original)
+
+
+def test_planning_trace_helpers_are_noops_without_a_run_id():
+    """start_run returns None when tracing fails; downstream calls must tolerate it."""
+    import asyncio
+    from datetime import datetime, timezone
+    from app.planning import trace as pt
+
+    asyncio.run(pt.record_step(None, 0, "critic", "", {}, 1.0, datetime.now(timezone.utc)))
+    asyncio.run(pt.finish_run(None, status="complete"))

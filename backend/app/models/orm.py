@@ -98,6 +98,60 @@ class MessageORM(Base):
     conversation: Mapped["ConversationORM"] = relationship("ConversationORM", back_populates="messages")
 
 
+class PlanningRunORM(Base):
+    """One row per multi-agent planning run — the trace the Planning tab renders.
+
+    The graph already traced every LLM call to `trace_log.jsonl` via app/tracing.py,
+    but that is opt-in (VOYAGER_TRACE_LLM=1), unredacted, rolls over at 50MB, and has
+    no run identifier — calls can only be grouped by clustering timestamps, which
+    breaks as soon as two runs overlap. This table gives each run a real id.
+    """
+    __tablename__ = "planning_run"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
+    conversation_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    user_message: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    destination: Mapped[str | None] = mapped_column(String, nullable=True)
+    #: running / complete / failed
+    status: Mapped[str] = mapped_column(String, nullable=False, default="running")
+    intent: Mapped[str | None] = mapped_column(String, nullable=True)
+    critic_score: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    revision_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    duration_ms: Mapped[float | None] = mapped_column(Float, nullable=True)
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    steps: Mapped[list["PlanningStepORM"]] = relationship(
+        back_populates="run", cascade="all, delete-orphan", order_by="PlanningStepORM.seq"
+    )
+
+
+class PlanningStepORM(Base):
+    """One row per graph node execution within a planning run.
+
+    `summary` is what the timeline shows at a glance; `output` holds the node's full
+    result for the expanded view. Both are captured at the node boundary, so what is
+    recorded is what one agent actually handed the next.
+    """
+    __tablename__ = "planning_step"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True)
+    run_id: Mapped[str] = mapped_column(String, ForeignKey("planning_run.id", ondelete="CASCADE"), nullable=False)
+    #: execution order within the run
+    seq: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    node: Mapped[str] = mapped_column(String, nullable=False)
+    label: Mapped[str] = mapped_column(String, nullable=False, default="")
+    started_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
+    duration_ms: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    #: one-line description of what this node produced, for the timeline
+    summary: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    #: the node's full state delta — what it handed to the next agent
+    output: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    run: Mapped["PlanningRunORM"] = relationship(back_populates="steps")
+
+
 class RetrievalLogORM(Base):
     """One row per vector-search call — the retrieval counterpart to `usage_log`.
 
@@ -109,9 +163,9 @@ class RetrievalLogORM(Base):
     __tablename__ = "retrieval_log"
 
     id: Mapped[str] = mapped_column(String, primary_key=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, index=True, default=lambda: datetime.now(timezone.utc))
     #: saved_places / episodic / semantic / journals
-    collection: Mapped[str] = mapped_column(String, nullable=False)
+    collection: Mapped[str] = mapped_column(String, nullable=False, index=True)
     query: Mapped[str] = mapped_column(Text, nullable=False, default="")
     #: filters actually applied (destination / trip_id / category), JSON object
     filters: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)

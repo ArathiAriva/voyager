@@ -357,3 +357,46 @@ export async function fetchRecentUsage(limit = 50): Promise<UsageCall[]> {
   if (!res.ok) throw new Error(`Usage API error: ${res.status}`);
   return res.json() as Promise<UsageCall[]>;
 }
+
+// ── Planning run traces ─────────────────────────────────────────────────────
+
+export interface PlanningRunSummary {
+  id: string;
+  created_at: string;
+  conversation_id: string | null;
+  user_message: string;
+  destination: string | null;
+  intent: string | null;
+  status: string;
+  critic_score: number | null;
+  revision_count: number;
+  duration_ms: number | null;
+  step_count: number;
+  error: string | null;
+}
+
+export interface PlanningStep {
+  seq: number;
+  node: string;
+  summary: string;
+  started_at: string;
+  duration_ms: number;
+  output: Record<string, unknown>;
+  error: string | null;
+}
+
+export interface PlanningRunDetail extends Omit<PlanningRunSummary, "step_count"> {
+  steps: PlanningStep[];
+}
+
+export async function fetchPlanningRuns(limit = 30): Promise<PlanningRunSummary[]> {
+  const res = await fetch(`${BASE_URL}/api/planning/runs?limit=${limit}`);
+  if (!res.ok) throw new Error(`Planning API error: ${res.status}`);
+  return res.json() as Promise<PlanningRunSummary[]>;
+}
+
+export async function fetchPlanningRun(id: string): Promise<PlanningRunDetail> {
+  const res = await fetch(`${BASE_URL}/api/planning/runs/${id}`);
+  if (!res.ok) throw new Error(`Planning API error: ${res.status}`);
+  return res.json() as Promise<PlanningRunDetail>;
+}

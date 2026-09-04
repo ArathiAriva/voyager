@@ -13,8 +13,11 @@ The DB session is passed via LangGraph config["configurable"]["session"] and
 extracted inside each node via RunnableConfig.
 """
 
+import itertools
 import logging
+import time
 import uuid
+from datetime import datetime, timezone
 from typing import Literal
 
 from sqlalchemy import select
@@ -28,6 +31,7 @@ from app.agents import planner, activities, food, accommodation, logistics, opti
 from app.models.orm import TripORM
 from app.utils import dest_matches as _dest_matches
 from app.tracing import node_context
+from app.planning import trace as planning_trace
 
 logger = logging.getLogger("voyager.planning.graph")
 
@@ -42,6 +46,41 @@ async def _emit(config: RunnableConfig, label: str) -> None:
     emit = config["configurable"].get("emit_step")
     if emit:
         await emit(label)
+
+
+
+def _traced(name: str, fn):
+    """Wrap a node so its output is persisted to `planning_step`.
+
+    Applied once at graph construction rather than inside each node, so every node --
+    including any added later -- is captured without a per-node edit. The recorded
+    delta is exactly what the node returned, i.e. what this agent handed the next.
+    Tracing is fail-open and never changes the node's result.
+    """
+    async def wrapped(state: PlanningState, config: RunnableConfig) -> dict:
+        run_id = config["configurable"].get("planning_run_id")
+        counter = config["configurable"].get("planning_seq")
+        started_at = datetime.now(timezone.utc)
+        started = time.perf_counter()
+        try:
+            delta = await fn(state, config)
+        except Exception as e:
+            if run_id:
+                seq = next(counter) if counter else 0
+                await planning_trace.record_step(
+                    run_id, seq, name, "", {}, (time.perf_counter() - started) * 1000,
+                    started_at, error=str(e),
+                )
+            raise
+        if run_id:
+            seq = next(counter) if counter else 0
+            await planning_trace.record_step(
+                run_id, seq, name, "", delta or {},
+                (time.perf_counter() - started) * 1000, started_at,
+            )
+        return delta
+
+    return wrapped
 
 
 # ── Node functions ────────────────────────────────────────────────────────────
@@ -338,18 +377,18 @@ def should_revise(state: PlanningState) -> Literal["revise", "proceed"]:
 def build_graph() -> StateGraph:
     g = StateGraph(PlanningState)
 
-    g.add_node("load_context", node_load_context)
-    g.add_node("classify_intent", node_classify_intent)
-    g.add_node("clarify", node_clarify)
-    g.add_node("activities_researcher", node_activities)
-    g.add_node("food_researcher", node_food)
-    g.add_node("logistics_researcher", node_logistics)
-    g.add_node("accommodation_researcher", node_accommodation)
-    g.add_node("optimizer", node_optimizer)
-    g.add_node("critic", node_critic)
-    g.add_node("targeted_revision", node_targeted_revision)
-    g.add_node("assemble_reply", node_assemble_reply)
-    g.add_node("persist_itinerary", node_persist_itinerary)
+    g.add_node("load_context", _traced("load_context", node_load_context))
+    g.add_node("classify_intent", _traced("classify_intent", node_classify_intent))
+    g.add_node("clarify", _traced("clarify", node_clarify))
+    g.add_node("activities_researcher", _traced("activities_researcher", node_activities))
+    g.add_node("food_researcher", _traced("food_researcher", node_food))
+    g.add_node("logistics_researcher", _traced("logistics_researcher", node_logistics))
+    g.add_node("accommodation_researcher", _traced("accommodation_researcher", node_accommodation))
+    g.add_node("optimizer", _traced("optimizer", node_optimizer))
+    g.add_node("critic", _traced("critic", node_critic))
+    g.add_node("targeted_revision", _traced("targeted_revision", node_targeted_revision))
+    g.add_node("assemble_reply", _traced("assemble_reply", node_assemble_reply))
+    g.add_node("persist_itinerary", _traced("persist_itinerary", node_persist_itinerary))
 
     g.set_entry_point("load_context")
     g.add_edge("load_context", "classify_intent")

@@ -283,7 +283,8 @@ async def send_message(
                 usage_context.set("planning")
                 try:
                     return await run_planning_graph(
-                        body.content, session, emit_step=enqueue_step
+                        body.content, session, emit_step=enqueue_step,
+                        conversation_id=conversation_id,
                     )
                 finally:
                     await step_queue.put(None)  # sentinel

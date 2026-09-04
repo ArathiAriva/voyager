@@ -67,6 +67,7 @@ retrieval versus a bad LLM.
 - [x] Multi-agent planning — LangGraph graph (`backend/app/planning/`) with specialist agents: planner, activities, food, accommodation, logistics, optimizer, critic; revision support scopes re-runs to affected domains
 - [x] Intent routing — planning-phrase detection routes chat messages to the graph; non-planning messages stay on the single-agent loop
 - [x] Streamed progress — graph nodes emit step labels surfaced live in the chat UI
+- [x] Agent trace viewer — every planning run persisted to `planning_run` / `planning_step`, with a Traces page showing the per-agent timeline and each agent's full handoff (`/planning`)
 - [x] Graceful fallback — graph failure falls back to the single-agent loop
 
 #### Phase 2 — operability (built, ongoing)

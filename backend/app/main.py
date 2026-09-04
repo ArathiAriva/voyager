@@ -35,7 +35,8 @@ from sqlalchemy import select
 from app.db import SessionLocal, engine, Base
 from app.models.orm import TripORM
 import app.models.orm  # noqa: F401 — ensure all ORM models are registered on Base.metadata
-from app.routers import trips, conversations, journal, content, memories, places, usage, retrieval
+from app.routers import (trips, conversations, journal, content, memories, places,
+                         usage, retrieval, planning)
 from app.observability import setup_tracing
 
 setup_tracing()  # no-op unless PHOENIX_COLLECTOR_ENDPOINT is set
@@ -58,6 +59,7 @@ app.include_router(memories.router, prefix="/api")
 app.include_router(places.router, prefix="/api")
 app.include_router(usage.router, prefix="/api")
 app.include_router(retrieval.router, prefix="/api")
+app.include_router(planning.router, prefix="/api")
 
 _SEED_TRIPS = [
     TripORM(id="1", destination="Kyoto, Japan", dates="March 2025", status="past", emoji="🏯", summary="Cherry blossom season, temple walks, and too much matcha."),

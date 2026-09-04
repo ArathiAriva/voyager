@@ -9,6 +9,7 @@ const navItems = [
   { label: "Trips", href: "/trips", icon: "🗺️" },
   { label: "Memories", href: "/memories", icon: "🧠" },
   { label: "Usage", href: "/usage", icon: "📊" },
+  { label: "Traces", href: "/planning", icon: "🔬" },
   { label: "Settings", href: "/settings", icon: "⚙️" },
 ];
 
