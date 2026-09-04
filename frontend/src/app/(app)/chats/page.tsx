@@ -63,10 +63,13 @@ export default function ChatsPage() {
     <Flex direction="column" flex={1} minH="100vh" bg="bg.page">
       {dialog}
       {/* Header */}
-      <Box px={8} pt={10} pb={6} borderBottom="1px solid" borderColor="border.default">
-        <Flex align="center" justify="space-between">
+      <Box px={10} pt={10} pb={6}>
+        <Flex align="end" justify="space-between">
           <Box>
-            <Text fontSize="2xl" fontWeight="800" letterSpacing="-0.04em" color="text.bright">
+            <Text fontSize="xs" fontWeight="600" letterSpacing="0.1em" textTransform="uppercase" color="text.secondary" mb={2}>
+              Your conversations
+            </Text>
+            <Text fontSize="3xl" fontWeight="800" letterSpacing="-0.03em" lineHeight="1.1">
               Chats
             </Text>
           </Box>
@@ -94,7 +97,7 @@ export default function ChatsPage() {
       </Box>
 
       {/* Content */}
-      <Box flex={1} px={8} py={6}>
+      <Box flex={1} px={10} pb={10}>
         {loading ? (
           <Flex justify="center" pt={16}>
             <Spinner color="accent.active" />
