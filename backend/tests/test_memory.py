@@ -794,3 +794,90 @@ def test_deleting_a_missing_memory_404s():
     with _pytest.raises(HTTPException) as exc:
         asyncio.run(api.delete_preference("no-such-id"))
     assert exc.value.status_code == 404
+
+
+# ── Write-time near-duplicate reconciliation (M-3/M-4) ──────────────────────
+
+def test_rewording_of_an_existing_preference_is_not_stored_twice():
+    """store_preferences never read before writing, so the same trait re-phrased
+    slightly became a second row -- sha256 IDs only catch identical text. Ten
+    extractions over one 20-message conversation produced 13 rows for ~4 traits."""
+    from app.memory import store_preferences, _semantic
+
+    store_preferences(["prefers walking and public transit over other transportation"])
+    store_preferences(["prefers walking or public transit over driving"])
+
+    assert _semantic().count() == 1
+
+
+def test_contradicting_rewording_keeps_the_first_phrasing():
+    """The pair that motivated this: one says coastal *instead of* woodland, the
+    other coastal *and* woodland. Both were stored with equal authority and no way
+    to resolve them. Keeping the first is a deliberate, documented choice."""
+    from app.memory import store_preferences, _semantic
+
+    store_preferences(["prefers coastal walks to woodland trails when available"])
+    store_preferences(["prefers coastal walks and woodland trails"])
+
+    documents = _semantic().get()["documents"]
+    assert documents == ["prefers coastal walks to woodland trails when available"]
+
+
+def test_distinct_traits_are_all_kept():
+    """The failure mode in the other direction: over-merging silently loses
+    information, which is worse than a wasted retrieval slot."""
+    from app.memory import store_preferences, _semantic
+
+    distinct = [
+        "prefers boutique hotels over large chains",
+        "travels on a tight budget",
+        "enjoys street food",
+        "avoids crowded tourist areas",
+        "prefers train travel over flying",
+        "likes museums and galleries",
+    ]
+    store_preferences(distinct)
+
+    assert _semantic().count() == len(distinct)
+
+
+def test_deduplication_refreshes_the_surviving_rows_timestamp():
+    """A re-demonstrated trait is newer evidence, so recency should reflect it --
+    otherwise 'latest wins' reconciliation (M-4) would age out live preferences."""
+    from app.memory import store_preferences, _semantic, _preference_id
+
+    store_preferences(["prefers walking and public transit over other transportation"])
+    pref_id = _preference_id("prefers walking and public transit over other transportation")
+    first = _semantic().get(ids=[pref_id])["metadatas"][0]["created_at"]
+
+    store_preferences(["prefers walking or public transit over driving"], source="journal")
+    after = _semantic().get(ids=[pref_id])["metadatas"][0]
+
+    assert after["created_at"] >= first
+    assert after["source"] == "journal"
+
+
+def test_identical_text_still_upserts_in_place():
+    """Exact repeats are handled by the content-hash ID, not the distance check."""
+    from app.memory import store_preferences, _semantic
+
+    store_preferences(["enjoys street food"])
+    store_preferences(["enjoys street food"])
+
+    assert _semantic().count() == 1
+
+
+def test_dedup_failure_never_loses_a_write(monkeypatch):
+    """Dedup is an optimisation. If the similarity query raises, the preference must
+    still be stored rather than silently dropped."""
+    import app.memory as mem
+
+    mem.store_preferences(["enjoys street food"])
+
+    collection = mem._semantic()
+    def boom(*args, **kwargs):
+        raise RuntimeError("chroma unavailable")
+    monkeypatch.setattr(collection, "query", boom)
+
+    mem.store_preferences(["prefers boutique hotels over large chains"])
+    assert collection.count() == 2

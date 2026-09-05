@@ -467,18 +467,45 @@ Not a regression: the purged profiles (`egwene` 46 rows, `moiraine` 38) show
 hold. `scripts/purge_preferences.py` already exists and is idempotent with a
 dry-run mode. Low priority — `rand` is not the primary dev profile.
 
-### M-3 — Semantic near-duplicates will re-accumulate
+### ~~M-3 — Semantic near-duplicates will re-accumulate~~ · **fixed 2026-09-04**
 
 Before the M-1 purge, 129/292 rows were paraphrases of the same few food traits,
 collapsing retrieval diversity to 2–3 distinct traits per 5 slots. sha256 dedup
-can't touch these — they're distinct strings — so the mechanism that produced
-them is unchanged and the cluster will rebuild over time. Options: write-time
-embedding dedup (~0.88 cosine), periodic compaction, or a cap with LRU.
+can't touch these — they're distinct strings.
+
+**It rebuilt exactly as predicted, in one conversation.** The first real session
+on the freshly-purged `moiraine` profile produced 13 preferences covering ~4
+traits (see M-6). Not residue: the live write path did this in a day.
+
+**Fixed** with write-time embedding dedup in `store_preferences`. Each incoming
+preference is checked against its nearest existing row; within
+`VOYAGER_PREFERENCE_DEDUPE_DISTANCE` (default **0.55 L2**, not cosine) it is
+skipped and the surviving row's `created_at`/`source` refreshed instead — a
+re-demonstrated trait is newer evidence, and aging it out would break M-4's
+"latest wins".
+
+Threshold calibrated on the real 13: genuine re-wordings measured 0.04–0.51,
+while the first arguably-distinct pair sat at 0.600, so 0.55 falls in the gap.
+Deliberately conservative — a kept duplicate costs one retrieval slot, whereas
+over-merging silently loses a real trait. Replaying those 13 now yields **6**
+rows with the contradicting pair collapsed. Dedup fails open: if the similarity
+query raises, the write still happens.
+
+Note this handles *re-wordings*, not semantic conflict. Two genuinely different
+traits that contradict each other are still both stored — that's M-4.
 
 ### M-4 — Nothing reconciles contradictions or bounds growth
 
-No cap, TTL, aging, compaction, or contradiction handling. Growth is monotonic at
-~3 preferences per conversation. **Unblocked by M-2 (2026-09-04)**: rows now
+No cap, TTL, aging, compaction, or semantic contradiction handling. Growth is
+monotonic at ~3 preferences per conversation.
+
+**Partially addressed by M-3's write-time dedup (2026-09-04)**, which bounds the
+*re-wording* class of growth — the 13→6 case. What remains is genuine
+contradiction between distinct statements ("prefers 3-day trips" vs "prefers
+week-long trips"), which dedup deliberately does not touch because the texts are
+far apart in embedding space. `created_at` now exists and is refreshed on every
+re-demonstration, so "latest wins" is implementable; a cap or TTL still needs a
+null-safe default for rows written before 2026-09-04. **Unblocked by M-2 (2026-09-04)**: rows now
 carry `created_at`, so "latest wins" — the cheapest reconciliation strategy — is
 now implementable. Note only rows written after that date have it; a cap or TTL
 needs a null-safe default for older rows.
@@ -498,7 +525,7 @@ new destination. Wants live retrieval data behind the decision rather than a
 guess made at write time. Note existing rows predate the metadata and carry no
 `destination`, so any filter needs a null-safe default (treat as global).
 
-### M-6 — Every exchange re-extracts the entire transcript · **not worth fixing yet**
+### M-6 — Every exchange re-extracts the entire transcript · **revisit trigger fired 2026-09-04**
 
 `conversations.py:88-92` re-sends the whole conversation to the extractor on every
 exchange, so turn 1 is re-processed on turns 2, 3, 4… Quadratic in conversation
@@ -524,6 +551,37 @@ Adding a processed-watermark to `messages` would need an Alembic migration.
 
 **Revisit when** conversations routinely exceed ~8 messages, or `memory_extraction`
 climbs meaningfully as a share of spend — both checkable from `usage_log`.
+
+---
+
+**The trigger fired on 2026-09-04, first real session on the reset `moiraine`
+profile.** A single Halifax planning conversation ran to **20 messages (10 user
+turns)** — 5× the previous observed maximum of 4, and well past the ~8 threshold
+named above. `usage_log` shows the quadratic growth plainly: the ten
+`memory_extraction` calls sent 499, 402, 726, 1141, 1392, 1627, 1908, 2275,
+2433, 2747 prompt tokens. Turn 1's text was re-sent ten times.
+
+**The cost argument was always the weaker half, and the duplicate half is now
+demonstrated.** Those ten extractions produced **13 preferences covering roughly
+4 traits** — 7 of 13 rows redundant at 0.75 cosine — including a contradicting
+pair (`prefers coastal walks TO woodland trails` / `prefers coastal walks AND
+woodland trails`, 0.978 cosine) stored with equal authority. Re-extraction is a
+duplicate *generator*: each additional turn is another chance to re-word a trait
+the model already emitted into a new row that sha256 IDs cannot catch.
+
+Critically, this rebuilt itself on a profile purged clean the same morning — so
+it is the live write path, not residue from before the M-1 purge.
+
+**Partially mitigated by M-3's write-time dedup (same day):** replaying those
+exact 13 preferences through the new `store_preferences` yields **6 rows**, and
+the contradicting pair collapses. That fixes the *symptom* regardless of how
+extraction is triggered.
+
+**Still worth fixing on its own merits**, now for cost and latency rather than
+duplicates: the quadratic prompt growth is real, and it is paid on every turn of
+every long conversation. The tradeoffs named above are unchanged — incremental
+extraction loses cross-turn inference, and a watermark needs an Alembic
+migration.
 
 ### M-7 — Episodic memory has its own duplicate problem
 

@@ -122,6 +122,54 @@ def _preference_id(pref: str) -> str:
     return hashlib.sha256(normalized.encode()).hexdigest()[:32]
 
 
+# Write-time near-duplicate threshold for preferences, as an L2 distance on
+# all-MiniLM-L6-v2 (the same metric as MAX_DISTANCE above, not cosine).
+#
+# store_preferences never read before writing, so the same trait re-phrased
+# slightly was stored again as a distinct row -- sha256 IDs cannot catch a
+# re-wording. A single 20-message conversation produced 13 preferences covering
+# roughly 4 traits, including a contradicting pair ("prefers coastal walks TO
+# woodland trails" alongside "prefers coastal walks AND woodland trails", 0.978
+# cosine) held with equal authority and no way to resolve them (M-3/M-4).
+#
+# Calibrated on that set: real re-wordings land under ~0.55 L2, while genuinely
+# distinct traits ("enjoys shopping" vs "likes museums") sit well above it. Set
+# deliberately conservative -- wrongly keeping a duplicate is a slot of wasted
+# retrieval, wrongly merging two real traits silently loses information.
+_PREFERENCE_DUPLICATE_DISTANCE = float(
+    os.getenv("VOYAGER_PREFERENCE_DEDUPE_DISTANCE", "0.55")
+)
+
+
+def _nearest_preference(
+    collection: chromadb.Collection, pref: str
+) -> tuple[str, str, float] | None:
+    """Return (id, text, distance) of an existing near-duplicate, else None.
+
+    Exact matches are handled by the content-hash ID and never reach here; this
+    catches paraphrases, which are the ones that actually accumulate.
+    """
+    if collection.count() == 0:
+        return None
+    try:
+        results = collection.query(query_texts=[pref], n_results=1)
+    except Exception:
+        # Dedup is an optimisation, never a reason to lose a write.
+        logger.exception("memory | near-duplicate check failed (storing anyway)")
+        return None
+    ids = (results.get("ids") or [[]])[0]
+    documents = (results.get("documents") or [[]])[0]
+    distances = (results.get("distances") or [[]])[0]
+    if not ids or not distances:
+        return None
+    if distances[0] > _PREFERENCE_DUPLICATE_DISTANCE:
+        return None
+    if ids[0] == _preference_id(pref):
+        # Identical text: let the normal upsert refresh it in place.
+        return None
+    return ids[0], documents[0], distances[0]
+
+
 def store_preferences(
     preferences: list[str],
     source: str = "conversation",
@@ -149,9 +197,27 @@ def store_preferences(
     meta: dict = {"created_at": _now(), "source": source}
     if destination:
         meta["destination"] = destination
+
+    stored = skipped = 0
     for pref in preferences:
+        near = _nearest_preference(collection, pref)
+        if near is not None:
+            existing_id, existing_text, distance = near
+            # Refresh the surviving row's timestamp: the trait was just
+            # re-demonstrated, which is exactly what recency should reflect.
+            collection.update(ids=[existing_id], metadatas=[{**meta}])
+            logger.info(
+                "memory | preference skipped as near-duplicate (d=%.3f): %r ~ %r",
+                distance, pref[:60], existing_text[:60],
+            )
+            skipped += 1
+            continue
         collection.upsert(ids=[_preference_id(pref)], documents=[pref], metadatas=[meta])
-    logger.info("memory | %d preference(s) upserted (source=%s)", len(preferences), source)
+        stored += 1
+    logger.info(
+        "memory | %d preference(s) stored, %d skipped as near-duplicates (source=%s)",
+        stored, skipped, source,
+    )
 
 
 def _delete_by_id(collection: chromadb.Collection, memory_id: str, label: str) -> bool:

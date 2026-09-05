@@ -34,6 +34,24 @@ profiles affected by the original bug.
 **Spawn background extraction via the module's `_spawn_extraction` helper, never
 `asyncio.create_task` directly.**
 
+**`store_preferences` dedupes at write time.** Each incoming preference is checked
+against its nearest existing row; within `VOYAGER_PREFERENCE_DEDUPE_DISTANCE`
+(default **0.55 L2**, not cosine) it is skipped and the surviving row's
+`created_at`/`source` refreshed instead — a re-demonstrated trait is newer
+evidence, and aging it out would break "latest wins" reconciliation.
+
+This exists because extraction re-sends the whole transcript every turn (M-6), so
+the model re-derives the same trait and re-words it slightly each time; content-hash
+IDs only catch identical text. One 20-message conversation produced 13 preferences
+covering ~4 traits, including a contradicting pair at 0.978 cosine. Replaying those
+13 through the dedup yields 6. Threshold calibrated on that set (real re-wordings
+0.04–0.51, first distinct pair 0.600) and deliberately conservative: a kept
+duplicate wastes one retrieval slot, while over-merging silently loses a real
+trait. Dedup fails open — a failed similarity query still stores the preference.
+
+It handles re-wordings, **not** semantic conflict: two genuinely different traits
+that contradict each other are still both stored (M-4).
+
 ## Retrieval
 
 The agent calls `search_memory` proactively when personalisation would help (system prompt instructs it to). The planning graph also pulls preferences and saved places into the research brief before dispatching researchers. Journal RAG is exposed via `search_journal`.
@@ -82,8 +100,10 @@ The Memories page surfaces episodic and semantic memories (`GET /api/memories`,
 `routers/memories.py`). Sections are named for the collections themselves —
 **Semantic** and **Episodic**. The episodic heading used to read "Past
 conversations", which was wrong for a visible fraction of rows: that collection also
-holds one summary per *journal entry*, and on `moiraine` 9 of its 10 rows are journal
-entries, not chats.
+holds one summary per *journal entry*. Measured before the profile was reset,
+`moiraine` had 9 of 10 such rows from journal entries and `egwene` 12 of 114 —
+the share varies by profile, so the heading was misleading rather than merely
+imprecise.
 
 Each card carries a **chat/journal source tag**. `_source_of` prefers the `source`
 metadata written since M-2, falling back to the `journal-{entry_id}` ID convention
