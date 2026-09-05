@@ -82,7 +82,10 @@ async def _extract_journal_memory(entry_id: str, trip_destination: str, body: st
         episode = extracted.get("episode", "").strip()
         preferences = [p for p in extracted.get("preferences", []) if p.strip()]
         if episode:
-            mem.store_episode(f"journal-{entry_id}", episode)
+            mem.store_episode(
+                f"journal-{entry_id}", episode,
+                source="journal", destination=trip_destination,
+            )
         else:
             # Previously this returned quietly and the entry silently had no
             # episode. An entry that produces no episode is a prompt/model
@@ -92,7 +95,7 @@ async def _extract_journal_memory(entry_id: str, trip_destination: str, body: st
                 entry_id[:8], raw[:200],
             )
         if preferences:
-            mem.store_preferences(preferences)
+            mem.store_preferences(preferences, source="journal", destination=trip_destination)
         logger.info(
             "journal | memory extraction complete for entry=%s: %d episode, %d preferences",
             entry_id[:8], 1 if episode else 0, len(preferences),

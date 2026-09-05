@@ -102,7 +102,22 @@ def test_multiple_preferences_stored():
     store_preferences(prefs)
     results = search_memory("food and transport preferences")
 
-    assert len(results["preferences"]) == 3
+    # The query asks about food and transport, so those two traits come back and
+    # the accommodation one (measured at 1.50, past the semantic floor) does not.
+    # Retrieval used to pad to n_results and return all three regardless.
+    assert set(results["preferences"]) == {"loves street food", "prefers walking over taxis"}
+
+
+def test_irrelevant_preferences_are_not_padded_into_results():
+    """Chroma returns n_results rows whenever the collection holds that many, so a
+    query with nothing relevant still came back full. Every row here is unrelated to
+    the query, so the honest answer is an empty list."""
+    from app.memory import store_preferences, search_memory
+
+    store_preferences(["prefers window seats", "collects fridge magnets"])
+    results = search_memory("quantum chromodynamics")
+
+    assert results["preferences"] == []
 
 
 def test_empty_preferences_list_is_noop():
@@ -135,9 +150,14 @@ def test_search_returns_both_episodes_and_preferences():
     store_episode("conv-x", "User planned a trip to Vietnam, loved the street food scene.")
     store_preferences(["prefers local markets over restaurants"])
 
+    # Queried on the axis the preference is actually about. "Vietnam food" matches
+    # the episode strongly but the preference only at 1.53 -- past the floor, so
+    # asserting on it would be asserting on padding.
+    results = search_memory("does the user like markets or restaurants")
+    assert len(results["preferences"]) >= 1
+
     results = search_memory("Vietnam food")
     assert len(results["episodes"]) >= 1
-    assert len(results["preferences"]) >= 1
 
 
 # ── Saved-place retrieval scoping (B-6) ─────────────────────────────────────
@@ -599,3 +619,84 @@ def test_scoped_and_unscoped_place_searches_are_distinguishable(isolated_places)
 
     assert {h["destination"] for h in unscoped} == {"Rome, Italy", "Lisbon, Portugal"}
     assert {h["destination"] for h in scoped} == {"Rome, Italy"}
+
+
+# ── Metadata provenance (M-2) ───────────────────────────────────────────────
+
+def test_preferences_carry_provenance_metadata():
+    """Rows previously had no metadata at all, which blocked recency-based
+    contradiction handling (M-4), destination scoping (M-5), and tracing a bad
+    preference back to the extraction that wrote it."""
+    import app.memory as mem
+
+    mem.store_preferences(["prefers night trains"], source="journal", destination="Lisbon, Portugal")
+    row = mem._semantic().get(ids=[mem._preference_id("prefers night trains")])
+    meta = row["metadatas"][0]
+
+    assert meta["source"] == "journal"
+    assert meta["destination"] == "Lisbon, Portugal"
+    assert meta["created_at"]
+
+
+def test_episodes_carry_provenance_metadata():
+    import app.memory as mem
+
+    mem.store_episode("conv-meta", "User asked about Porto.", source="conversation")
+    meta = mem._episodic().get(ids=["conv-meta"])["metadatas"][0]
+
+    assert meta["source"] == "conversation"
+    assert meta["created_at"]
+
+
+def test_destination_is_omitted_when_unknown():
+    """Chroma rejects None metadata values, so an unknown destination must be left
+    out of the dict rather than written as null."""
+    import app.memory as mem
+
+    mem.store_preferences(["prefers aisle seats"])
+    meta = mem._semantic().get(ids=[mem._preference_id("prefers aisle seats")])["metadatas"][0]
+
+    assert "destination" not in meta
+    assert meta["source"] == "conversation"
+
+
+# ── Multi-probe preference retrieval ────────────────────────────────────────
+
+def test_merge_preference_hits_dedupes_and_ranks_by_best_distance():
+    """Facet probes overlap, so the same row comes back from several of them. The
+    merge keeps one copy at its best distance and ranks globally."""
+    from app.agents.planner import _merge_preference_hits
+
+    merged = _merge_preference_hits(
+        [
+            [{"id": "a", "document": "likes markets", "distance": 1.1},
+             {"id": "b", "document": "likes trains", "distance": 0.9}],
+            [{"id": "a", "document": "likes markets", "distance": 0.4}],
+        ],
+        limit=5,
+    )
+
+    assert merged == ["likes markets", "likes trains"]
+
+
+def test_merge_preference_hits_respects_limit():
+    from app.agents.planner import _merge_preference_hits
+
+    hits = [{"id": str(i), "document": f"pref {i}", "distance": i / 10} for i in range(10)]
+    assert _merge_preference_hits([hits], limit=3) == ["pref 0", "pref 1", "pref 2"]
+
+
+def test_search_memory_can_target_one_collection():
+    """The planner's facet probes want preferences only. Querying both collections
+    would run six redundant episodic searches per plan and log six retrieval rows
+    for searches nobody asked for."""
+    from app.memory import store_episode, store_preferences, search_memory
+
+    store_episode("conv-sel", "User asked about Porto.")
+    store_preferences(["prefers guesthouses over hotels"])
+
+    out = search_memory("accommodation preferences", collections=("semantic",))
+    assert out["episodes"] == []
+    assert out["episode_hits"] == []
+    assert len(out["preferences"]) == 1
+

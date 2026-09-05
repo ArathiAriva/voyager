@@ -14,6 +14,11 @@ backend/data/
 backend/chroma_*/
 backend/profiles/.env.*
 
+# Same artifacts when a tool is run from the repo root rather than backend/
+# (pytest writes a stray chroma_db/ + voyager.db there).
+/voyager.db
+/chroma_db/
+
 # Node
 frontend/node_modules/
 frontend/.next/

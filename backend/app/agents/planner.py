@@ -121,15 +121,67 @@ async def build_clarification(missing: list[str], user_message: str, model: str 
     return (response.choices[0].message.content or "").strip()
 
 
-async def load_user_context(user_message: str, session: AsyncSession, model: str | None = None) -> dict:
+# Preferences are stored as trait statements ("prefers guesthouses over hotels"),
+# but a planning message is mostly logistics ("I plan to be there between 11am and
+# 6pm"). Embedding those against each other matches on the wrong axis: a logged
+# query returned five preferences, three of them about *timing*, because the raw
+# message was dominated by time-of-day tokens.
+#
+# Retrieving against facet probes instead asks the question the collection can
+# actually answer. The user's message still runs as one probe, so anything it
+# genuinely matches is kept; the facets add coverage the raw query never reached.
+# Cheap by design -- MiniLM embeddings are local, so this costs no API calls.
+PREFERENCE_FACETS = [
+    "food and dining preferences",
+    "accommodation preferences",
+    "pace, timing, and crowd preferences",
+    "activities, culture, and sightseeing interests",
+    "budget and spending preferences",
+    "transport and getting-around preferences",
+]
+
+
+def _merge_preference_hits(hit_lists: list[list[dict]], limit: int) -> list[str]:
+    """Flatten multi-probe results into one list, best distance wins per document.
+
+    Facet probes overlap, so the same trait is returned by several of them. Dedupe
+    on Chroma ID and keep each row's best (lowest) distance, then rank globally so
+    a strong hit from one facet outranks a weak hit from another.
+    """
+    best: dict[str, dict] = {}
+    for hits in hit_lists:
+        for hit in hits:
+            existing = best.get(hit["id"])
+            if existing is None or hit["distance"] < existing["distance"]:
+                best[hit["id"]] = hit
+    ranked = sorted(best.values(), key=lambda h: h["distance"])
+    return [h["document"] for h in ranked[:limit]]
+
+
+async def load_user_context(
+    user_message: str,
+    session: AsyncSession,
+    model: str | None = None,
+    max_preferences: int = 8,
+) -> dict:
     """Fetch memory, saved places, and past trips to enrich the planning brief."""
+    # Episodes stay on the raw message -- they are conversation summaries, so they
+    # share its register and the facet probes would not help.
     mem = memory.search_memory(user_message)
+
+    preference_hits = [mem.get("preference_hits", [])]
+    for facet in PREFERENCE_FACETS:
+        preference_hits.append(
+            memory.search_memory(facet, collections=("semantic",)).get("preference_hits", [])
+        )
+    preferences = _merge_preference_hits(preference_hits, max_preferences)
+
     trips_result = await session.execute(select(TripORM))
     trips = trips_result.scalars().all()
     places = memory.search_saved_places(user_message, n_results=20)
 
     return {
-        "preferences": mem.get("preferences", []),
+        "preferences": preferences,
         "episodes": mem.get("episodes", []),
         "past_trips": [{"id": t.id, "destination": t.destination, "dates": t.dates, "status": t.status} for t in trips],
         "saved_places": places,

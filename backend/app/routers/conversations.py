@@ -175,9 +175,9 @@ async def _run_extraction(conversation_id: str, history: list[dict]) -> None:
         episode = extracted.get("episode", "").strip()
         preferences = [p for p in extracted.get("preferences", []) if p.strip()]
         if episode:
-            memory.store_episode(conversation_id, episode)
+            memory.store_episode(conversation_id, episode, source="conversation")
         if preferences:
-            memory.store_preferences(preferences)
+            memory.store_preferences(preferences, source="conversation")
         logger.info("conv=%s | memory extraction complete: 1 episode, %d preferences", conversation_id[:8], len(preferences))
     except Exception:
         logger.exception("conv=%s | memory extraction failed (non-fatal)", conversation_id[:8])
