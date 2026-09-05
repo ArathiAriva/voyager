@@ -300,6 +300,27 @@ and the three conversation deletes. Each dialog names what else disappears (a tr
 its journal entries and saved places with it) rather than asking a generic "are you sure".
 Still no undo; confirmation is the only guard.
 
+### B-13 — The planner can silently create a duplicate trip
+
+`_resolve_trip_id` (`planning/graph.py:207`) matches the brief's destination
+against existing trips by fuzzy name and, when nothing matches, **creates a new
+trip**. There is no failure branch and no warning — the user's first sight of it
+is a second card on the trips page.
+
+Same class as B-10 (`create_trip` not idempotent), but on a path the user never
+explicitly invokes. `dest_matches` covers the common "Halifax" vs "Halifax, Nova
+Scotia" case, so this is latent rather than frequent; the exposure is any
+phrasing the fuzzy match misses.
+
+Root cause is structural: conversations carry no `trip_id`, so the planner has
+nothing but the destination string to go on. The fix is Stage 2 of
+[docs/trip-scoped-chats.md](docs/trip-scoped-chats.md) — prefer the
+conversation's trip and never create one when the conversation is already
+scoped — which needs only that doc's Stage 1 column, not its UI.
+
+**Severity:** medium — silent, user-visible, and it corrupts per-trip scoping for
+everything attached to the wrong trip afterwards.
+
 ### ~~B-12 — Itinerary edits could silently delete days~~ · **fixed 2026-09-05**
 
 `set_itinerary` replaces the entire itinerary (`trip.itinerary = args["days"]`),

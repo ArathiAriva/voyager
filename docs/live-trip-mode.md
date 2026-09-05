@@ -175,3 +175,17 @@ reason.
 3. **Is the journal the real prize?** Live capture — "add to my journal: the fish
    was excellent" attaching to the right trip and date with no ceremony — may be
    more valuable than the retrieval improvements, and is Stage 3.
+
+   **Constraint on that stage: the agent must never author or edit journal text.**
+   The journal is the one place in Voyager that is the user's own voice rather
+   than agent-generated or agent-summarised, and it feeds both `journals` RAG and
+   preference extraction, so distortion there propagates into what Voyager
+   believes about the user. An LLM asked to "add this to my journal" will tidy the
+   wording by default, producing entries in the model's register attributed to the
+   user. Capture must pass the text through verbatim (echo-back before writing, or
+   client-side capture that never routes the text through the model); the agent's
+   contribution is the *metadata* — trip and date — not the words.
+
+4. **Does this want [trip-scoped chats](trip-scoped-chats.md) first?** Journal
+   capture needs an unambiguous trip. Live mode supplies one while a trip is
+   underway; a scoped conversation supplies one always.

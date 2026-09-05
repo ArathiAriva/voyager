@@ -31,6 +31,7 @@ Each phase is a capability that deepens over time rather than a box that closes.
 | **4. Observability of retrieval** | Retrieval quality monitoring — the unmeasured RAG layer | Next |
 | **5. Memory maturity** | Preference provenance → dedup → reconciliation → evolution | Blocked on M-2 |
 | **Live Trip Mode** | Agent knows a trip is underway: which day, today's plan | 🕐 Candidate — Stage 1 built, unscheduled |
+| **Trip-scoped chats** | Conversations carry a `trip_id`; picker on new chat | 🕐 Candidate — design only, unscheduled |
 | **6. Production** | Deployment, auth, Postgres/pgvector, rate limits, quotas | Deferred |
 
 Phases 2–4 are the *maintenance* spine: an LLM app gradually builds sophistication in
@@ -75,6 +76,19 @@ phase was scheduled. It is self-contained and revertible. **Open question:** thi
 is a new capability rather than maintenance, so under guiding principle 2 it
 should not displace Phase 4 (retrieval observability) without a deliberate
 decision.
+
+**Trip-scoped chats** — candidate, not scheduled. Design:
+[docs/trip-scoped-chats.md](docs/trip-scoped-chats.md).
+
+Conversations have no `trip_id`, so trip context is re-derived from message text
+every turn — and the planner's `_resolve_trip_id` **silently creates a duplicate
+trip** when its fuzzy destination match misses. Stage 2 of that doc is the fix and
+is arguably a bug rather than a feature, which may let it jump the queue.
+
+Note open question 2: a trip-scoped conversation could carry `trip_id` into
+preference extraction, which is the exact missing back-reference behind **B-2**
+(revoking preferences from an edited journal entry) and **M-5** (destination
+scoping). That may be worth more than the UI work.
 
 **RAG — journal + saved places**
 
