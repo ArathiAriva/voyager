@@ -9,7 +9,7 @@ import {
   type PlanningRunDetail,
   type PlanningStep,
 } from "@/lib/api";
-import { CompassIcon } from "@/components/icons";
+import { CompassIcon, ChevronRightIcon } from "@/components/icons";
 
 /** Each graph node's role, so the timeline reads as a conversation between agents. */
 const NODE_META: Record<string, { label: string; role: string }> = {
@@ -157,8 +157,9 @@ export default function PlanningPage() {
             Agent traces
           </Text>
           <Text fontSize="sm" color="text.secondary" mt={2} maxW="60ch">
-            Every multi-agent planning run, and what each agent handed the next. Click a step
-            to see its full output.
+            Every multi-agent planning run, and what each agent handed the next.
+            Pick a run on the left to see its timeline, then click any step for that
+            agent&rsquo;s full output.
           </Text>
         </Box>
 
@@ -174,9 +175,25 @@ export default function PlanningPage() {
             </Text>
           </Box>
         ) : (
-          <Flex gap={6} align="start" direction={{ base: "column", lg: "row" }}>
+          // Side-by-side from `md` rather than `lg`: with the page capped at 1100px
+          // and p={10} padding, the lg breakpoint (1024px) meant most laptop windows
+          // fell back to the stacked layout, where the run list and the timeline read
+          // as one continuous list of cards.
+          <Flex gap={6} align="start" direction={{ base: "column", md: "row" }}>
             {/* run list */}
-            <VStack align="stretch" gap={2} w={{ base: "full", lg: "300px" }} flexShrink={0}>
+            <VStack align="stretch" gap={2} w={{ base: "full", md: "280px", lg: "300px" }} flexShrink={0}>
+              {/* Headings matter more than they look here: below the lg breakpoint the
+                  two columns stack, so without them the run list and the timeline read
+                  as one continuous list of cards and nothing says the first group is
+                  clickable. */}
+              <HStack justify="space-between" align="baseline" mb={1}>
+                <Text fontSize="xs" fontWeight="700" letterSpacing="0.08em" textTransform="uppercase" color="text.secondary">
+                  Runs
+                </Text>
+                <Text fontSize="xs" color="text.muted">
+                  {runs.length} {runs.length === 1 ? "run" : "runs"} · select one
+                </Text>
+              </HStack>
               {runs.map((r) => {
                 const active = selected?.id === r.id;
                 return (
@@ -194,9 +211,16 @@ export default function PlanningPage() {
                     transition="border-color 0.12s"
                   >
                     <HStack justify="space-between" gap={2} mb={1}>
-                      <Text fontSize="sm" fontWeight="600" lineClamp={1}>
-                        {r.destination ?? "Unknown destination"}
-                      </Text>
+                      <HStack gap={1.5} minW={0} flex={1}>
+                        {active && (
+                          <Box color="accent.active" flexShrink={0} aria-hidden="true">
+                            <ChevronRightIcon size={12} />
+                          </Box>
+                        )}
+                        <Text fontSize="sm" fontWeight="600" lineClamp={1}>
+                          {r.destination ?? "Unknown destination"}
+                        </Text>
+                      </HStack>
                       {r.status === "failed" ? (
                         <Badge size="sm" colorPalette="red" borderRadius="full">failed</Badge>
                       ) : r.critic_score != null ? (
@@ -218,6 +242,16 @@ export default function PlanningPage() {
 
             {/* timeline */}
             <Box flex={1} minW={0} w="full">
+              <HStack justify="space-between" align="baseline" mb={3}>
+                <Text fontSize="xs" fontWeight="700" letterSpacing="0.08em" textTransform="uppercase" color="text.secondary">
+                  Timeline
+                </Text>
+                {selected && (
+                  <Text fontSize="xs" color="text.muted" lineClamp={1}>
+                    {selected.destination ?? "Unknown destination"} · {fmtWhen(selected.created_at)}
+                  </Text>
+                )}
+              </HStack>
               {loadingRun ? (
                 <Flex justify="center" py={16}><Spinner size="sm" /></Flex>
               ) : selected ? (

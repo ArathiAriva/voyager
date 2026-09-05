@@ -30,6 +30,7 @@ frontend/src/
 - Tailwind v4 is CSS-first (`globals.css`), no `tailwind.config.js`.
 - **Theme switching (Chakra v3):** use `.dark`/`.light` class names on `<html>` (not `data-theme`), with `_light`/`_dark` conditions in semanticTokens.
 - Chat pages consume the backend SSE stream: token/step events render live progress (planning-graph node labels appear as steps).
+- `planning/` is the agent-trace viewer: a master/detail pair — a **Runs** list on the left, the selected run's **Timeline** on the right. Both columns carry an explicit heading because they stack below the `md` breakpoint, and without labels the two groups read as one continuous list of cards with nothing signalling that the first group is clickable.
 - `retrieval/` is the RAG-health view (Phase 4): per-collection zero rate, best-distance percentiles, saturation, a by-caller zero-rate table, and recent searches with a zero-result filter. Numbers are colour-graded against the per-collection distance floors in `backend/app/memory.py`, since the same distance means different things per collection — 1.5 is healthy for `saved_places` and past the floor for `semantic`.
 
 ## Commands & tests
