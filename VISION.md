@@ -32,6 +32,7 @@ Each phase is a capability that deepens over time rather than a box that closes.
 | **5. Memory maturity** | Preference provenance → dedup → reconciliation → evolution | Blocked on M-2 |
 | **Live Trip Mode** | Agent knows a trip is underway: which day, today's plan | 🕐 Candidate — Stage 1 built, unscheduled |
 | **Trip-scoped chats** | Conversations carry a `trip_id`; picker on new chat | 🕐 Candidate — design only, unscheduled |
+| **Visited places & anecdotes** | Mark a saved place as visited; store the user's own note about it | 🕐 Candidate — design only, unscheduled |
 | **6. Production** | Deployment, auth, Postgres/pgvector, rate limits, quotas | Deferred |
 
 Phases 2–4 are the *maintenance* spine: an LLM app gradually builds sophistication in
@@ -89,6 +90,22 @@ Note open question 2: a trip-scoped conversation could carry `trip_id` into
 preference extraction, which is the exact missing back-reference behind **B-2**
 (revoking preferences from an edited journal entry) and **M-5** (destination
 scoping). That may be worth more than the UI work.
+
+**Visited places & anecdotes** — candidate, not scheduled. Design:
+[docs/visited-places-and-anecdotes.md](docs/visited-places-and-anecdotes.md).
+
+A saved place cannot be marked as visited, so a restaurant you booked and loved and
+one you bookmarked and skipped are the same row. And the only user-writable text on
+a place is `notes` — which on `egwene` is agent-written on all 73 places, and is a
+documented prompt-injection channel. There is nowhere for "the queue was 40 minutes
+but the mosaics were worth it" to go.
+
+Both gaps have one shape: room for what Voyager *suggests*, none for what the user
+*experienced*. It is also the only feedback edge in the app — Voyager plans a trip,
+the user takes it, and nothing flows back.
+
+Open question 1 is the one to weigh: "went to and wrote warmly about" is the
+strongest preference signal available and the extractor currently cannot see it.
 
 **RAG — journal + saved places**
 

@@ -162,6 +162,10 @@ unscoped; the UI should say so rather than showing a dangling reference.
    behind B-2 (revoking preferences from an edited entry) and M-5 (destination
    scoping). Possibly the most valuable side effect here, and worth weighing
    before the UI work.
-3. **One trip per conversation, or several?** A single nullable FK assumes one.
+3. **Does this unblock [visited places & anecdotes](visited-places-and-anecdotes.md)?**
+   That design's Stage 4 (chat capture of an anecdote) needs an unambiguous place,
+   which needs an unambiguous trip. A scoped conversation supplies one always;
+   Live Trip Mode supplies one only while a trip is underway.
+4. **One trip per conversation, or several?** A single nullable FK assumes one.
    "Compare my Kyoto and Florence trips" suggests otherwise. Starting with one is
    right; a join table later if it proves wrong.
