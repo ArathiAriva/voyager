@@ -38,6 +38,9 @@ import app.models.orm  # noqa: F401 — ensure all ORM models are registered on 
 from app.routers import (trips, conversations, journal, content, memories, places,
                          usage, retrieval, planning)
 from app.observability import setup_tracing
+from app import flags
+
+logger = logging.getLogger("voyager.main")
 
 setup_tracing()  # no-op unless PHOENIX_COLLECTOR_ENDPOINT is set
 
@@ -72,6 +75,9 @@ _SEED_TRIPS = [
 async def startup() -> None:
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+    if not flags.seed_demo_trips():
+        logger.info("startup | demo-trip seeding disabled (VOYAGER_SEED_DEMO_TRIPS)")
+        return
     async with SessionLocal() as session:
         existing = await session.execute(select(TripORM).limit(1))
         if existing.scalar() is None:
