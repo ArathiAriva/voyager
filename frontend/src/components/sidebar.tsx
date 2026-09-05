@@ -44,8 +44,19 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
       h="100vh"
       alignSelf="flex-start"
     >
-      {/* Logo + toggle */}
-      <Box mb={10} px={collapsed ? 0 : 6} display="flex" alignItems="center" justifyContent={collapsed ? "center" : "space-between"}>
+      {/* Logo + toggle.
+          Collapsed, this stacks: the compass sits on the nav icons' centre line and
+          the toggle goes directly beneath it. Side by side, the two squeeze into the
+          64px rail and neither lands on the axis the nav icons share below. */}
+      <Box
+        mb={10}
+        px={collapsed ? 0 : 6}
+        display="flex"
+        flexDirection={collapsed ? "column" : "row"}
+        alignItems="center"
+        gap={collapsed ? 3 : 0}
+        justifyContent={collapsed ? "center" : "space-between"}
+      >
         {!collapsed && (
           <Box>
             <Text fontSize="xl" fontWeight="800" letterSpacing="-0.04em" lineHeight="1" whiteSpace="nowrap">
@@ -58,7 +69,7 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
         )}
 
         {collapsed && (
-          <Box color="text.bright" mb={1}><CompassIcon size={22} /></Box>
+          <Box color="text.bright"><CompassIcon size={22} /></Box>
         )}
 
         <Box
