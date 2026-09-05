@@ -5,6 +5,7 @@ import { Box, VStack, HStack, Text, Flex, Spinner, Badge } from "@chakra-ui/reac
 import {
   fetchPlanningRuns,
   fetchPlanningRun,
+  ApiError,
   type PlanningRunSummary,
   type PlanningRunDetail,
   type PlanningStep,
@@ -123,9 +124,21 @@ export default function PlanningPage() {
 
   useEffect(() => {
     fetchPlanningRuns()
-      .then((rs) => {
+      .then(async (rs) => {
         setRuns(rs);
-        if (rs.length > 0) return fetchPlanningRun(rs[0].id).then(setSelected);
+        if (rs.length === 0) return;
+        try {
+          setSelected(await fetchPlanningRun(rs[0].id));
+        } catch (e) {
+          // The list and the detail can disagree if a run vanished between the two
+          // calls. Failing to auto-open the newest run must not blank the page --
+          // the list is still usable.
+          if (e instanceof ApiError && e.status === 404) {
+            setRuns((prev) => prev.filter((r) => r.id !== rs[0].id));
+          } else {
+            throw e;
+          }
+        }
       })
       .catch(() => setError("Couldn't load planning runs. Is the backend running?"))
       .finally(() => setLoading(false));
@@ -135,8 +148,18 @@ export default function PlanningPage() {
     setLoadingRun(true);
     try {
       setSelected(await fetchPlanningRun(id));
-    } catch {
-      setError("Couldn't load that run.");
+      setError(null);
+    } catch (e) {
+      // A 404 means the run is gone from the server while this page still lists
+      // it -- deleted elsewhere, or the profile was reset. Drop it from the list
+      // rather than leaving a row that 404s on every click.
+      if (e instanceof ApiError && e.status === 404) {
+        setRuns((prev) => prev.filter((r) => r.id !== id));
+        setSelected((prev) => (prev?.id === id ? null : prev));
+        setError("That run no longer exists — it has been removed from the list.");
+      } else {
+        setError("Couldn't load that run.");
+      }
     } finally {
       setLoadingRun(false);
     }

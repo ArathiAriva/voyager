@@ -483,8 +483,16 @@ export async function fetchPlanningRuns(limit = 30): Promise<PlanningRunSummary[
   return res.json() as Promise<PlanningRunSummary[]>;
 }
 
+/** Thrown by API helpers so callers can tell "gone" from "backend is down". */
+export class ApiError extends Error {
+  constructor(message: string, readonly status: number) {
+    super(message);
+    this.name = "ApiError";
+  }
+}
+
 export async function fetchPlanningRun(id: string): Promise<PlanningRunDetail> {
   const res = await fetch(`${BASE_URL}/api/planning/runs/${id}`);
-  if (!res.ok) throw new Error(`Planning API error: ${res.status}`);
+  if (!res.ok) throw new ApiError(`Planning API error: ${res.status}`, res.status);
   return res.json() as Promise<PlanningRunDetail>;
 }
