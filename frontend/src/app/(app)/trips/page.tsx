@@ -10,6 +10,25 @@ import { fetchTrips, createTrip, deleteTrip, type Trip, type TripCreate } from "
 import { useConfirm } from "@/components/confirm-dialog";
 import { CloseIcon } from "@/components/icons";
 
+/**
+ * A trip that is happening today shows as live regardless of its stored `status`.
+ * `status` is the user's declared intent and goes stale -- a trip marked "active"
+ * in March is still "active" in September -- so the server derives `is_live` from
+ * the trip's dates on every read. See docs/live-trip-mode.md.
+ */
+function tripBadge(trip: Trip): { label: string; palette: string; live: boolean } {
+  if (trip.is_live) {
+    const day = trip.live_day, total = trip.live_total_days;
+    return {
+      label: day && total ? `Day ${day} of ${total}` : "Happening now",
+      palette: "green",
+      live: true,
+    };
+  }
+  if (trip.status === "active") return { label: "Active", palette: "green", live: false };
+  return { label: trip.status, palette: trip.status === "upcoming" ? "blue" : "gray", live: false };
+}
+
 const STATUS_OPTIONS = createListCollection({
   items: [
     { label: "Past", value: "past" },
@@ -128,9 +147,9 @@ export default function TripsPage() {
                 bg="bg.surface"
                 borderRadius="2xl"
                 p={6}
-                boxShadow={trip.status === "active" ? "0 0 0 2px var(--chakra-colors-green-500), 0 4px 24px rgba(0,0,0,0.22)" : "0 4px 24px rgba(0,0,0,0.22)"}
+                boxShadow={tripBadge(trip).palette === "green" ? "0 0 0 2px var(--chakra-colors-green-500), 0 4px 24px rgba(0,0,0,0.22)" : "0 4px 24px rgba(0,0,0,0.22)"}
                 border="none"
-                _hover={{ boxShadow: trip.status === "active" ? "0 0 0 2px var(--chakra-colors-green-400), 0 8px 32px rgba(0,0,0,0.32)" : "0 8px 32px rgba(0,0,0,0.32)", transform: "translateY(-2px)" }}
+                _hover={{ boxShadow: tripBadge(trip).palette === "green" ? "0 0 0 2px var(--chakra-colors-green-400), 0 8px 32px rgba(0,0,0,0.32)" : "0 8px 32px rgba(0,0,0,0.32)", transform: "translateY(-2px)" }}
                 transition="all 0.2s"
                 cursor="pointer"
                 position="relative"
@@ -140,7 +159,7 @@ export default function TripsPage() {
                   <Text fontSize="3xl">{trip.emoji}</Text>
                   <HStack gap={2}>
                     <Badge
-                      colorPalette={trip.status === "active" ? "green" : trip.status === "upcoming" ? "blue" : "gray"}
+                      colorPalette={tripBadge(trip).palette}
                       borderRadius="full"
                       px={3}
                       py={1}
@@ -149,7 +168,7 @@ export default function TripsPage() {
                       textTransform="uppercase"
                       letterSpacing="0.05em"
                     >
-                      {trip.status === "active" ? "Active" : trip.status}
+                      {tripBadge(trip).label}
                     </Badge>
                     <Button
                       size="xs"

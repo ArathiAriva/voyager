@@ -59,6 +59,11 @@ normal and means live mode does not engage.
 Known limitation: "today" is the server's local date (`live_trip.today()`), which
 is correct for a single-user local app and wrong once deployed across timezones.
 
+`GET /trips` and `GET /trips/{id}` return derived `is_live`, `live_day` and
+`live_total_days` (`_with_liveness` in `routers/trips.py`) so the UI does not have
+to read `status` to decide whether a trip is happening. The stored `status` is
+returned unchanged next to them.
+
 **Editing a trip.** `update_trip` patches metadata (`destination`, `dates`,
 `status`, `emoji`, `summary`, `tags`) — only the fields passed. Itineraries are
 separate: `set_itinerary` **replaces the whole itinerary**, so an edit must pass

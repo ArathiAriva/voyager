@@ -389,11 +389,15 @@ export default function TripDetailPage() {
             <HStack gap={3} align="center">
               <Text fontSize="2xl" fontWeight="bold">{trip.destination}</Text>
               <Badge
-                colorPalette={trip.status === "active" ? "green" : trip.status === "upcoming" ? "blue" : "gray"}
+                colorPalette={trip.is_live ? "green" : trip.status === "active" ? "green" : trip.status === "upcoming" ? "blue" : "gray"}
                 borderRadius="full"
                 px={2}
               >
-                {trip.status === "active" ? "Active" : trip.status}
+                {trip.is_live
+                  ? (trip.live_day && trip.live_total_days
+                      ? `Day ${trip.live_day} of ${trip.live_total_days}`
+                      : "Happening now")
+                  : trip.status === "active" ? "Active" : trip.status}
               </Badge>
             </HStack>
             <Text fontSize="sm" color="text.secondary">{trip.dates}</Text>

@@ -129,7 +129,14 @@ Each stage is independently useful and independently revertible.
 | **1** | `resolve_trip_window` + `is_live` + `get_current_trip` tool + system-prompt injection | none | **built 2026-09-05** |
 | **2** | `start_date`/`end_date` columns, backfilled from itineraries; date picker in the trip form | Alembic | not built |
 | **3** | Planner brief carries the live trip; journal entries default to today's trip and date | none | not built |
-| **4** | UI: "Day 2 of 4" on the trip card, today's plan surfaced on the trips page | none | not built |
+| **4** | UI: "Day 2 of 4" badge on the trip card and detail page | none | **built 2026-09-05** |
+
+Stage 4's badge was pulled forward, because Stage 1 created an inconsistency by
+itself: the agent knew the user was on day 2 while the trip card still read
+"upcoming" from the stored `status`. `GET /trips` now returns derived
+`is_live`/`live_day`/`live_total_days` alongside the untouched `status`, and the
+card and detail page prefer them. Today's plan on the trips page is still not
+surfaced.
 
 Stage 1 is built because it is the whole idea in miniature and needs no schema
 change — it works today for any trip with a planned itinerary. Stages 2–4 are

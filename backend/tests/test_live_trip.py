@@ -255,3 +255,51 @@ def test_live_prompt_surfaces_ambiguity_rather_than_hiding_it():
         "today": None, "other_live_trips": ["Lisbon"],
     })
     assert "Lisbon" in text and "Ask which one" in text
+
+
+# ── Derived liveness on the trips API ───────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_trip_response_carries_derived_liveness(session):
+    """The UI read `status` to decide whether a trip was happening, so a live trip
+    still showed its stored badge ("upcoming") while the agent knew it was day 2.
+    The API now derives is_live/live_day on every read."""
+    from app.routers.trips import list_trips
+
+    start = date.today() - timedelta(days=1)
+    session.add(TripORM(id="t1", destination="Halifax", dates="x", status="upcoming",
+                        emoji="🌊", itinerary=_itinerary(start, 4)))
+    await session.commit()
+
+    trip = (await list_trips(session))[0]
+    assert trip.is_live is True
+    assert trip.live_day == 2 and trip.live_total_days == 4
+    # status is the user's declared intent and is left exactly as stored.
+    assert trip.status == "upcoming"
+
+
+@pytest.mark.asyncio
+async def test_non_live_trip_reports_false_without_day_numbers(session):
+    from app.routers.trips import list_trips
+
+    session.add(TripORM(id="t1", destination="Kyoto", dates="April 2024", status="past",
+                        emoji="🏯"))
+    await session.commit()
+
+    trip = (await list_trips(session))[0]
+    assert trip.is_live is False
+    assert trip.live_day is None and trip.live_total_days is None
+
+
+@pytest.mark.asyncio
+async def test_single_trip_endpoint_also_derives_liveness(session):
+    """All four trip return paths must agree -- a trip that is live in the list must
+    not look dormant on its own detail page."""
+    from app.routers.trips import get_trip
+
+    session.add(TripORM(id="t1", destination="Halifax", dates="x", status="upcoming",
+                        emoji="🌊", itinerary=_itinerary(date.today(), 3)))
+    await session.commit()
+
+    trip = await get_trip("t1", session)
+    assert trip.is_live is True and trip.live_day == 1

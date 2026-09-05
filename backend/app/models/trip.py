@@ -41,6 +41,14 @@ class TripUpdate(BaseModel):
 class Trip(TripBase):
     id: str
 
+    # Derived on read, never stored -- see app/live_trip.py and
+    # docs/live-trip-mode.md. `status` stays the user's declared intent; these say
+    # whether the trip is actually happening today. Storing liveness would need a
+    # scheduler and would go stale exactly the way `status = "active"` does.
+    is_live: bool = False
+    live_day: int | None = None
+    live_total_days: int | None = None
+
     model_config = {"from_attributes": True}
 
 

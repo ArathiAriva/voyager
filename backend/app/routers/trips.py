@@ -8,14 +8,40 @@ from app.db import get_session
 from app.models.orm import TripORM
 from app.models.trip import Trip, TripCreate, TripUpdate
 from app import memory
+from app import live_trip
 
 router = APIRouter(prefix="/trips", tags=["trips"])
+
+
+def _with_liveness(trip: TripORM) -> Trip:
+    """Attach derived live-trip fields to a trip response.
+
+    `status` is the user's declared intent and goes stale -- a trip marked
+    "active" in March is still active in September -- so the UI must not read it
+    to decide whether a trip is happening now. Liveness is computed from the
+    trip's dates on every read instead. See docs/live-trip-mode.md.
+    """
+    model = Trip.model_validate(trip)
+    window = live_trip.resolve_trip_window(
+        itinerary=trip.itinerary,
+        dates=trip.dates,
+        start_date=getattr(trip, "start_date", None),
+        end_date=getattr(trip, "end_date", None),
+    )
+    if window is None:
+        return model
+    today = live_trip.today()
+    if window.contains(today):
+        model.is_live = True
+        model.live_day = window.day_number(today)
+        model.live_total_days = window.total_days
+    return model
 
 
 @router.get("", response_model=list[Trip])
 async def list_trips(session: AsyncSession = Depends(get_session)) -> list[Trip]:
     result = await session.execute(select(TripORM))
-    return result.scalars().all()
+    return [_with_liveness(t) for t in result.scalars().all()]
 
 
 @router.get("/{trip_id}", response_model=Trip)
@@ -23,7 +49,7 @@ async def get_trip(trip_id: str, session: AsyncSession = Depends(get_session)) -
     trip = await session.get(TripORM, trip_id)
     if not trip:
         raise HTTPException(status_code=404, detail="Trip not found")
-    return trip
+    return _with_liveness(trip)
 
 
 @router.post("", response_model=Trip, status_code=201)
@@ -32,7 +58,7 @@ async def create_trip(body: TripCreate, session: AsyncSession = Depends(get_sess
     session.add(trip)
     await session.commit()
     await session.refresh(trip)
-    return trip
+    return _with_liveness(trip)
 
 
 @router.patch("/{trip_id}", response_model=Trip)
@@ -46,7 +72,7 @@ async def update_trip(
         setattr(trip, field, value)
     await session.commit()
     await session.refresh(trip)
-    return trip
+    return _with_liveness(trip)
 
 
 @router.delete("/{trip_id}", status_code=204)

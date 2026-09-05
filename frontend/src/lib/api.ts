@@ -49,6 +49,14 @@ export interface Trip {
   cover_photo_url?: string | null;
   tags: string[];
   itinerary?: ItineraryDay[] | null;
+  /**
+   * Derived server-side from the trip's dates on every read, never stored --
+   * `status` is the user's declared intent and goes stale. See
+   * docs/live-trip-mode.md.
+   */
+  is_live?: boolean;
+  live_day?: number | null;
+  live_total_days?: number | null;
 }
 
 export interface TripCreate {
