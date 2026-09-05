@@ -30,6 +30,7 @@ Each phase is a capability that deepens over time rather than a box that closes.
 | **3. Trustworthiness** | Agent safety evals — indirect prompt injection, both architectures | 🔄 Active |
 | **4. Observability of retrieval** | Retrieval quality monitoring — the unmeasured RAG layer | Next |
 | **5. Memory maturity** | Preference provenance → dedup → reconciliation → evolution | Blocked on M-2 |
+| **Live Trip Mode** | Agent knows a trip is underway: which day, today's plan | 🕐 Candidate — Stage 1 built, unscheduled |
 | **6. Production** | Deployment, auth, Postgres/pgvector, rate limits, quotas | Deferred |
 
 Phases 2–4 are the *maintenance* spine: an LLM app gradually builds sophistication in
@@ -56,6 +57,24 @@ retrieval versus a bad LLM.
 - [x] Multi-profile support — per-user SQLite + Chroma, switchable via `--profile` flag
 - [x] LLM-generated seed data — realistic profiles for development and testing
 - [ ] Preference evolution — moved to Phase 5, and deliberately unscheduled there: it is blocked on M-2 provenance, not on time
+
+**Live Trip Mode** — candidate, not scheduled. Design:
+[docs/live-trip-mode.md](docs/live-trip-mode.md).
+
+- [x] Stage 1 — trip temporality (`app/live_trip.py`), `get_current_trip` tool,
+      system-prompt injection while a trip is underway. No migration: itinerary
+      days already carry ISO dates, so any planned trip is live-capable today.
+- [ ] Stage 2 — `start_date`/`end_date` columns + date picker (needs Alembic)
+- [ ] Stage 3 — planner brief carries the live trip; journal entries default to
+      today's trip and date (**likely the highest-value stage** — live capture
+      rather than retrospective writing)
+- [ ] Stage 4 — UI: "Day 2 of 4" on the trip card, today's plan on the trips page
+
+Stage 1 was built to make the idea concrete for a priority call, not because the
+phase was scheduled. It is self-contained and revertible. **Open question:** this
+is a new capability rather than maintenance, so under guiding principle 2 it
+should not displace Phase 4 (retrieval observability) without a deliberate
+decision.
 
 **RAG — journal + saved places**
 

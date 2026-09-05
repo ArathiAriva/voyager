@@ -14,7 +14,7 @@ from app.db import get_session
 from app.models.orm import ConversationORM, MessageORM
 from app.models.conversation import Conversation, ConversationSummary, SendMessageRequest, Message
 from app.claude import get_client, get_model
-from app.tools import TOOL_SCHEMAS, execute_tool
+from app.tools import TOOL_SCHEMAS, execute_tool, find_live_trip
 from app.mcp_client import mcp_tool_schemas, call_mcp_tool
 from app.flags import resolve_planner
 from app.usage import usage_context
@@ -83,6 +83,35 @@ SYSTEM_PROMPT = (
     "- When the user does confirm, save your own concise summary of the place or plan "
     "(a sentence or two in your words, plus the source url), not raw copied page text."
 )
+
+def _live_trip_prompt(live: dict) -> str:
+    """One paragraph telling the agent the user is mid-trip.
+
+    Added only while a trip is actually underway, so most conversations pay
+    nothing. Kept short deliberately (~35 tokens): its job is to remove the "which
+    trip do you mean?" round-trip, not to restate the itinerary -- the agent can
+    call get_current_trip for the full plan. See docs/live-trip-mode.md.
+    """
+    lines = [
+        "LIVE TRIP:",
+        f"The user is currently ON this trip: {live['destination']}, "
+        f"day {live['day_number']} of {live['total_days']} (today is {live['date']}).",
+        "Assume questions about food, weather, activities, or what to do refer to "
+        "here and now unless they say otherwise. Do not ask which trip they mean.",
+    ]
+    today = live.get("today") or {}
+    if today.get("title"):
+        lines.append(f"Today's plan: {today['title']}.")
+    if today.get("area_focus"):
+        lines.append(f"Area for today: {today['area_focus']}.")
+    lines.append("Call get_current_trip for the full plan for today or the days remaining.")
+    if live.get("other_live_trips"):
+        lines.append(
+            "Note: other trips also overlap today (" + ", ".join(live["other_live_trips"])
+            + "). Ask which one they mean if it matters."
+        )
+    return "\n".join(lines)
+
 
 EXTRACTION_PROMPT = """You are a memory extraction assistant for a travel app.
 Given a conversation, extract:
@@ -339,6 +368,21 @@ async def send_message(
         trip_action: dict | None = None
         msg = None
 
+        # Live-trip context: when a trip is underway, the agent should not have to
+        # ask which city the user is in. Resolved once per request rather than per
+        # tool-loop iteration, and only added when a trip is actually live -- see
+        # docs/live-trip-mode.md. Failure here must not break the reply.
+        system_prompt = SYSTEM_PROMPT
+        try:
+            live = await find_live_trip(session)
+        except Exception:
+            logger.exception("conv=%s | live-trip lookup failed (non-fatal)", conversation_id[:8])
+            live = None
+        if live:
+            system_prompt = SYSTEM_PROMPT + "\n\n" + _live_trip_prompt(live)
+            logger.info("conv=%s | live trip: day %s/%s of %s", conversation_id[:8],
+                        live["day_number"], live["total_days"], live["destination"])
+
         try:
             while True:
                 iteration += 1
@@ -346,7 +390,7 @@ async def send_message(
 
                 response = await client.chat.completions.create(
                     model=model,
-                    messages=[{"role": "system", "content": SYSTEM_PROMPT}] + history,
+                    messages=[{"role": "system", "content": system_prompt}] + history,
                     tools=all_tools,
                     tool_choice="auto",
                 )

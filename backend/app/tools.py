@@ -18,6 +18,7 @@ from app.models.orm import TripORM
 from app.models.trip import PLACE_CATEGORIES, coerce_category
 from app.utils import dest_matches
 from app import memory
+from app import live_trip
 
 logger = logging.getLogger("voyager.tools")
 
@@ -275,6 +276,20 @@ TOOL_SCHEMAS = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_current_trip",
+            "description": (
+                "Check whether the user is on a trip right now, and if so which day they are on "
+                "and what today's plan says. Call this when a question depends on where the user "
+                "is or what day it is — 'where should I eat', 'what's next', 'is it going to rain', "
+                "'what should I do today'. Returns live: false when no trip is underway, in which "
+                "case answer normally. Prefer this over asking the user which trip they mean."
+            ),
+            "parameters": {"type": "object", "properties": {}, "required": []},
+        },
+    },
 ]
 
 # ── Executors (called when the LLM fires a tool) ─────────────────────────────
@@ -492,6 +507,79 @@ async def _execute_get_trips(args: dict, session: AsyncSession) -> str:
     })
 
 
+async def find_live_trip(session: AsyncSession) -> dict | None:
+    """The trip the user is on today, with day number and today's plan, or None.
+
+    Shared by the `get_current_trip` tool and the system-prompt injection so both
+    answer from the same logic. Liveness is derived, never read from
+    `trips.status` -- see app/live_trip.py for why.
+    """
+    result = await session.execute(select(TripORM))
+    trips = result.scalars().all()
+    now = live_trip.today()
+
+    candidates: list[tuple[TripORM, live_trip.TripWindow]] = []
+    for trip in trips:
+        window = live_trip.resolve_trip_window(
+            itinerary=trip.itinerary,
+            dates=trip.dates,
+            start_date=getattr(trip, "start_date", None),
+            end_date=getattr(trip, "end_date", None),
+        )
+        if window and window.contains(now):
+            candidates.append((trip, window))
+
+    if not candidates:
+        return None
+    # Overlapping trips are possible. Prefer the one that started most recently
+    # rather than silently picking whichever the DB returned first, and report
+    # the ambiguity so the model can ask instead of assuming.
+    candidates.sort(key=lambda pair: pair[1].start, reverse=True)
+    trip, window = candidates[0]
+    day_number = window.day_number(now)
+
+    today_plan = None
+    remaining: list[dict] = []
+    for entry in (trip.itinerary or []):
+        if not isinstance(entry, dict):
+            continue
+        if entry.get("date") and str(entry["date"])[:10] == now.isoformat():
+            today_plan = entry
+        elif entry.get("date") and str(entry["date"])[:10] > now.isoformat():
+            remaining.append({"day": entry.get("day"), "date": entry.get("date"),
+                              "title": entry.get("title")})
+        elif not entry.get("date") and entry.get("day") == day_number:
+            # Itinerary without dates: fall back to positional day matching.
+            today_plan = entry
+
+    return {
+        "live": True,
+        "trip_id": trip.id,
+        "destination": trip.destination,
+        "day_number": day_number,
+        "total_days": window.total_days,
+        "date": now.isoformat(),
+        "window": {"start": window.start.isoformat(), "end": window.end.isoformat(),
+                   "source": window.source},
+        "today": today_plan,
+        "remaining_days": remaining,
+        "other_live_trips": [t.destination for t, _ in candidates[1:]],
+    }
+
+
+async def _execute_get_current_trip(args: dict, session: AsyncSession) -> str:
+    live = await find_live_trip(session)
+    if live is None:
+        return json.dumps({
+            "live": False,
+            "message": ("The user is not on a trip today. Answer normally; do not assume "
+                        "a destination."),
+        })
+    logger.info("Tool get_current_trip: day %s/%s of %s",
+                live["day_number"], live["total_days"], live["destination"])
+    return json.dumps(live)
+
+
 async def _execute_search_journal(args: dict, session: AsyncSession) -> str:
     query = args.get("query", "")
     trip_id = args.get("trip_id")
@@ -523,6 +611,7 @@ TOOL_EXECUTORS = {
     "get_trips": _execute_get_trips,
     "search_journal": _execute_search_journal,
     "search_memory": _execute_search_memory,
+    "get_current_trip": _execute_get_current_trip,
 }
 
 

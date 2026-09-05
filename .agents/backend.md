@@ -13,6 +13,7 @@ backend/app/
 ├── db.py              # Async engine + SessionLocal (per-profile SQLite)
 ├── tools.py           # Tool schemas + executors for the single-agent loop (471 lines)
 ├── memory.py          # Chroma memory system (see memory.md)
+├── live_trip.py       # Trip temporality: is a trip happening now, which day (see docs/live-trip-mode.md)
 ├── mcp_client.py      # stdio client that spawns mcp-server/server.py on demand
 ├── observability.py   # Phoenix/OTel tracing setup (no-op without PHOENIX_COLLECTOR_ENDPOINT)
 ├── routers/           # trips, conversations, journal, content, memories, places, usage
@@ -31,7 +32,32 @@ backend/app/
 
 ## Tools (`app/tools.py`)
 
-`TOOL_SCHEMAS` is a **list**; use `tool_by_name(name)` / `tools_named(*names)` for lookups. Executors: `create_trip`, `update_trip`, `get_trips`, `set_itinerary`, `save_place`, `search_places`, `search_journal`, `search_memory`, plus MCP tools (`get_weather`, `get_exchange_rate`) proxied through `mcp_client.py`.
+`TOOL_SCHEMAS` is a **list**; use `tool_by_name(name)` / `tools_named(*names)` for lookups. Executors: `create_trip`, `update_trip`, `get_trips`, `get_current_trip`, `set_itinerary`, `save_place`, `search_places`, `search_journal`, `search_memory`, plus MCP tools (`get_weather`, `get_exchange_rate`) proxied through `mcp_client.py`.
+
+**Live Trip Mode** (`app/live_trip.py`, design doc
+[docs/live-trip-mode.md](../docs/live-trip-mode.md)). While a trip is underway the
+agent knows which trip, which day, and today's plan, so it need not ask which city
+the user is in. Two surfaces: the `get_current_trip` tool, and a short block
+prepended to the system prompt by `_live_trip_prompt` — added only when a trip is
+actually live, so most conversations pay nothing.
+
+Liveness is **derived on read, never stored**. `trips.status = "active"` is
+user-declared intent and goes stale (a trip marked active in March is still active
+in September); `find_live_trip` ignores it and compares dates instead.
+`resolve_trip_window` takes the best available source: itinerary day dates → the
+Stage-2 `start_date`/`end_date` columns (not yet added; read defensively so the
+resolver will not need changing) → an explicit range parsed out of the free-text
+`dates` field.
+
+**The itinerary is the primary source, not `dates`.** Itinerary days already carry
+ISO dates written by the planner, so any planned trip is live-capable with no
+migration. The `dates` parser is deliberately narrow — it accepts only ranges
+naming specific days, because month-only values like "April 2024" identify a month
+rather than a window and would make a trip live for 30 days. Returning `None` is
+normal and means live mode does not engage.
+
+Known limitation: "today" is the server's local date (`live_trip.today()`), which
+is correct for a single-user local app and wrong once deployed across timezones.
 
 **Editing a trip.** `update_trip` patches metadata (`destination`, `dates`,
 `status`, `emoji`, `summary`, `tags`) — only the fields passed. Itineraries are
