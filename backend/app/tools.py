@@ -15,7 +15,8 @@ from datetime import datetime, timezone
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.orm import TripORM
-from app.models.trip import PLACE_CATEGORIES, coerce_category
+from app.models.trip import PLACE_CATEGORIES, ItineraryDay, coerce_category
+from pydantic import ValidationError
 from app.utils import dest_matches
 from app import memory
 from app import live_trip
@@ -468,7 +469,17 @@ async def _execute_set_itinerary(args: dict, session: AsyncSession) -> str:
             "existing_days": len(existing),
             "submitted_days": len(days),
         })
-    trip.itinerary = days
+    # Validate through ItineraryDay rather than writing the model's raw dicts:
+    # its date validator normalises "September 4, 2026" to ISO. Without this the
+    # tool wrote whatever the model produced, and a non-ISO date silently broke
+    # both the UI ("Invalid Date") and Live Trip Mode's window resolution.
+    try:
+        trip.itinerary = [ItineraryDay.model_validate(d).model_dump() for d in days]
+    except ValidationError as exc:
+        logger.warning("Tool set_itinerary: rejected malformed days for trip %s: %s",
+                       trip.id[:8], exc)
+        return json.dumps({"error": f"Itinerary days are malformed: {exc.error_count()} problem(s). "
+                                     "Each day needs at least `day` (integer) and `plan` (text)."})
     await session.commit()
     await session.refresh(trip)
     logger.info("Tool set_itinerary: saved %d days for trip %s (%s)", len(trip.itinerary), trip.id[:8], trip.destination)

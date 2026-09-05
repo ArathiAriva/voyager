@@ -1,15 +1,52 @@
+import logging
 from datetime import datetime
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 from typing import Literal, get_args
+
+logger = logging.getLogger("voyager.models.trip")
 
 
 class ItineraryDay(BaseModel):
     day: int
-    date: str | None = None  # e.g. "2025-04-10"
+    date: str | None = None  # ISO "2025-04-10"; see the validator below
     title: str = ""
     plan: str  # freeform markdown or prose for the day
     area_focus: str | None = None  # primary neighbourhood/area for the day
     accommodation: str | None = None  # where the user is staying this day
+
+    @field_validator("date")
+    @classmethod
+    def _normalise_date(cls, value: str | None) -> str | None:
+        """Coerce a day's date to ISO, or drop it.
+
+        The tool schema asks for YYYY-MM-DD but the field accepted any string, so
+        nothing enforced it -- the planner wrote "September 4, 2026" on one run and
+        ISO on another. Two things break on that: the UI renders
+        `new Date(date + "T00:00:00")`, which yields "Invalid Date", and
+        `live_trip._from_itinerary` cannot resolve a window, so Live Trip Mode
+        loses today's plan.
+
+        Normalising here fixes both at the boundary rather than teaching every
+        reader to re-parse. An unparseable date becomes None, which every consumer
+        already handles, instead of a string that silently poisons them.
+        """
+        if value is None:
+            return None
+        text = str(value).strip()
+        if not text:
+            return None
+        for fmt in ("%Y-%m-%d", "%B %d, %Y", "%b %d, %Y", "%d %B %Y", "%d %b %Y",
+                    "%B %d %Y", "%b %d %Y", "%m/%d/%Y", "%Y/%m/%d"):
+            try:
+                return datetime.strptime(text, fmt).date().isoformat()
+            except ValueError:
+                continue
+        # ISO with a time component ("2026-09-04T00:00:00") is common enough to keep.
+        try:
+            return datetime.fromisoformat(text).date().isoformat()
+        except ValueError:
+            logger.warning("itinerary | dropping unparseable day date %r", text[:40])
+            return None
 
 
 class TripBase(BaseModel):

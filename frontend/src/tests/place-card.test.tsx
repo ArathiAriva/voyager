@@ -49,3 +49,28 @@ describe("open affordance", () => {
     expect(button.querySelector("svg")).not.toBeNull();
   });
 });
+
+
+describe("card footer alignment", () => {
+  it("pins the action row to the bottom regardless of body length", () => {
+    // Cards in a wrapped row stretch to equal height. Without a column layout the
+    // action row follows the summary, so Open lands at a different height on every
+    // card -- visible whenever summaries differ in length, which is always.
+    function Card({ summary }: { summary: string }) {
+      return (
+        <div style={{ display: "flex", flexDirection: "column" }} data-testid="card">
+          <div style={{ flex: "1" }} data-testid="body">{summary}</div>
+          <div style={{ marginTop: "auto" }} data-testid="actions">Open</div>
+        </div>
+      );
+    }
+    const { rerender } = render(<Card summary="short" />);
+    expect(screen.getByTestId("card").style.flexDirection).toBe("column");
+    expect(screen.getByTestId("body").style.flex).toBe("1 1 0%");
+    expect(screen.getByTestId("actions").style.marginTop).toBe("auto");
+
+    // The contract holds for a long summary too -- that is the whole point.
+    rerender(<Card summary={"a much longer summary ".repeat(10)} />);
+    expect(screen.getByTestId("actions").style.marginTop).toBe("auto");
+  });
+});

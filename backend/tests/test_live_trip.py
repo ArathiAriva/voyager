@@ -303,3 +303,61 @@ async def test_single_trip_endpoint_also_derives_liveness(session):
 
     trip = await get_trip("t1", session)
     assert trip.is_live is True and trip.live_day == 1
+
+
+# ── Itinerary date normalisation ────────────────────────────────────────────
+
+@pytest.mark.parametrize("raw,expected", [
+    ("2026-09-04", "2026-09-04"),
+    # What the planner actually wrote, which broke both the UI and live mode.
+    ("September 4, 2026", "2026-09-04"),
+    ("Sep 4, 2026", "2026-09-04"),
+    ("4 September 2026", "2026-09-04"),
+    ("9/4/2026", "2026-09-04"),
+    ("2026-09-04T00:00:00", "2026-09-04"),
+])
+def test_itinerary_day_dates_are_normalised_to_iso(raw, expected):
+    """`date` was a bare str, so nothing enforced the schema's YYYY-MM-DD. The
+    planner wrote ISO on one run and "September 4, 2026" on another; the UI renders
+    `new Date(date + "T00:00:00")` and showed "Invalid Date", while
+    live_trip._from_itinerary could not resolve a window and lost today's plan."""
+    from app.models.trip import ItineraryDay
+
+    assert ItineraryDay(day=1, plan="x", date=raw).date == expected
+
+
+@pytest.mark.parametrize("raw", ["sometime next week", "", "   ", None])
+def test_unparseable_day_dates_become_none(raw):
+    """None is handled everywhere; a junk string silently poisons every consumer."""
+    from app.models.trip import ItineraryDay
+
+    assert ItineraryDay(day=1, plan="x", date=raw).date is None
+
+
+@pytest.mark.asyncio
+async def test_set_itinerary_normalises_dates_on_write(session):
+    """The executor wrote the model's raw dicts straight to the DB, bypassing
+    ItineraryDay entirely -- which is how the bad dates got in."""
+    import json
+    from app.tools import execute_tool
+
+    session.add(TripORM(id="t1", destination="Halifax", dates="x", status="upcoming", emoji="🌊"))
+    await session.commit()
+
+    await execute_tool("set_itinerary", {
+        "trip_id": "t1",
+        "days": [{"day": 1, "date": "September 4, 2026", "plan": "Arrive"},
+                 {"day": 2, "date": "September 5, 2026", "plan": "Hike"}],
+    }, session)
+
+    trips = json.loads(await execute_tool("get_trips", {}, session))["trips"]
+    assert [d["date"] for d in trips[0]["itinerary"]] == ["2026-09-04", "2026-09-05"]
+
+
+@pytest.mark.asyncio
+async def test_non_iso_itinerary_dates_would_break_live_resolution(session):
+    """Regression guard for the real failure: with non-ISO dates the itinerary
+    source resolves nothing, so Live Trip Mode loses today's plan even when it can
+    still fall back to the `dates` string for the window."""
+    assert resolve_trip_window(itinerary=[{"day": 1, "date": "September 4, 2026"}]) is None
+    assert resolve_trip_window(itinerary=[{"day": 1, "date": "2026-09-04"}]) is not None

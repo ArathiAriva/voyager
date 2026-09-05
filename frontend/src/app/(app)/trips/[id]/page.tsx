@@ -718,8 +718,13 @@ export default function TripDetailPage() {
           <Flex gap={4} flexWrap="wrap">
             {places.map((place) => {
               return (
-                <Box
+                <Flex
                   key={place.id}
+                  // Column layout with the body flexed: cards in a row stretch to
+                  // equal height, and without this the action row sits wherever the
+                  // summary happens to end, so Open lands at a different height on
+                  // every card.
+                  direction="column"
                   bg="bg.surface"
                   borderRadius="xl"
                   border="1px solid"
@@ -748,7 +753,7 @@ export default function TripDetailPage() {
                       <Box color="text.muted"><PinIcon size={14} /></Box>
                     </Flex>
                   )}
-                  <Box p={3}>
+                  <Box p={3} flex="1">
                     <HStack justify="space-between" align="start" mb={1}>
                       <Text fontSize="sm" fontWeight="semibold" color="text.bright" lineClamp={2} flex={1}>
                         {place.name}
@@ -779,7 +784,7 @@ export default function TripDetailPage() {
                       <Text fontSize="xs" color="text.dim" mt={1}>Fetching details...</Text>
                     ) : null}
                   </Box>
-                  <HStack justify="space-between" px={3} pb={3}>
+                  <HStack justify="space-between" px={3} pb={3} mt="auto">
                     {place.url ? (
                       <Button
                         size="xs"
@@ -806,7 +811,7 @@ export default function TripDetailPage() {
                       <CloseIcon />
                     </Button>
                   </HStack>
-                </Box>
+                </Flex>
               );
             })}
           </Flex>
@@ -877,8 +882,12 @@ export default function TripDetailPage() {
 
           <Flex gap={4} flexWrap="wrap">
             {content.map((item) => (
-              <Box
+              <Flex
                 key={item.id}
+                // Same reason as the place cards: without a column layout the
+                // action row follows the title, so Open sits at a different height
+                // on every card in the row.
+                direction="column"
                 bg="bg.surface"
                 borderRadius="xl"
                 border="1px solid"
@@ -902,7 +911,7 @@ export default function TripDetailPage() {
                     {item.type === "album" ? "Album" : item.type === "instagram" ? "Instagram" : item.type === "tiktok" ? "TikTok" : item.type === "blog" ? "Blog" : "Link"}
                   </Flex>
                 )}
-                <Box p={3}>
+                <Box p={3} flex="1">
                   <Text fontSize="xs" fontWeight="semibold" color="text.bright" lineClamp={2}>
                     {item.title ?? new URL(item.url).hostname}
                   </Text>
@@ -910,7 +919,7 @@ export default function TripDetailPage() {
                     {item.type}
                   </Text>
                 </Box>
-                <HStack justify="space-between" px={3} pb={3}>
+                <HStack justify="space-between" px={3} pb={3} mt="auto">
                   <Button
                     size="xs"
                     variant="ghost"
@@ -935,7 +944,7 @@ export default function TripDetailPage() {
                     <CloseIcon />
                   </Button>
                 </HStack>
-              </Box>
+              </Flex>
             ))}
           </Flex>
         </VStack>
