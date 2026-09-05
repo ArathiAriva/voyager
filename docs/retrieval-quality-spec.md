@@ -151,9 +151,22 @@ nothing. That lesson is already paid for; do not re-learn it here.
    `episode_hits` / `preference_hits`; the plain lists stay for existing callers, and
    `_execute_search_memory` strips the hits so they don't spend model context.
 3. ~~**`GET /api/retrieval/summary`**~~ — **done**, plus `/api/retrieval/recent` for
-   eyeballing what a bad number means. The frontend view beside the Usage tab is *not*
-   built.
-4. **Golden set + `evals/retrieval_run.py`** — the correctness half. Still outstanding.
+   eyeballing what a bad number means. ~~The frontend view beside the Usage tab is *not*
+   built.~~ **Built 2026-09-05** (`frontend/src/app/(app)/retrieval/page.tsx`, "Retrieval"
+   in the sidebar): per-collection cards, a by-caller zero-rate table, and a recent-search
+   list with a zero-result-only filter.
+
+   The page's job is to make a bad number legible without the reader remembering what
+   good looks like, so every rate and distance is colour-graded. Distance thresholds
+   mirror the per-collection floors in `app/memory.py` — at the floor, results are being
+   dropped — which is why they are per-collection: 1.5 is healthy for `saved_places`
+   (short noun phrases) and past the floor for `semantic` (sentences). A single global
+   threshold would misreport one of them.
+4. **Golden set + `evals/retrieval_run.py`** — the correctness half. Still outstanding,
+   and still gated on traffic rather than effort: at 2026-09-05 `retrieval_log` holds
+   ~22 rows across every profile, all from synthetic probes. Labelling now means
+   guessing the query distribution, which is exactly what steps 1–3 were sequenced to
+   avoid. Use the app; the golden set then writes itself from real queries.
 
 **Retention decision (open question above):** log everything, no cap — matching
 `usage_log`. Revisit with real row counts rather than pre-building a pruning mechanism.

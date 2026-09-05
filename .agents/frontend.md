@@ -12,7 +12,7 @@ frontend/src/
 │   ├── (app)/            # Sidebar shell — all product pages live here
 │   │   ├── chat/  chats/  chats/[id]/     # chat UI (SSE streaming)
 │   │   ├── trips/  trips/[id]/            # trip cards + detail (Itinerary/Journal/Places tabs)
-│   │   ├── memories/  usage/  settings/
+│   │   ├── memories/  usage/  retrieval/  settings/
 │   │   └── layout.tsx
 │   ├── layout.tsx        # Root layout (providers, fonts)
 │   └── page.tsx          # Landing / redirect
@@ -30,6 +30,7 @@ frontend/src/
 - Tailwind v4 is CSS-first (`globals.css`), no `tailwind.config.js`.
 - **Theme switching (Chakra v3):** use `.dark`/`.light` class names on `<html>` (not `data-theme`), with `_light`/`_dark` conditions in semanticTokens.
 - Chat pages consume the backend SSE stream: token/step events render live progress (planning-graph node labels appear as steps).
+- `retrieval/` is the RAG-health view (Phase 4): per-collection zero rate, best-distance percentiles, saturation, a by-caller zero-rate table, and recent searches with a zero-result filter. Numbers are colour-graded against the per-collection distance floors in `backend/app/memory.py`, since the same distance means different things per collection — 1.5 is healthy for `saved_places` and past the floor for `semantic`.
 
 ## Commands & tests
 

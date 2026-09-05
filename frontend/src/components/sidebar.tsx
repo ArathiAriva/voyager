@@ -4,7 +4,7 @@ import { Box, Flex, Text, VStack } from "@chakra-ui/react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
-  ChatIcon, MapIcon, BrainIcon, ChartIcon, TraceIcon, SettingsIcon, CompassIcon,
+  ChatIcon, MapIcon, BrainIcon, ChartIcon, TraceIcon, SettingsIcon, CompassIcon, SearchIcon,
 } from "@/components/icons";
 
 const navItems = [
@@ -12,6 +12,7 @@ const navItems = [
   { label: "Trips", href: "/trips", Icon: MapIcon },
   { label: "Memories", href: "/memories", Icon: BrainIcon },
   { label: "Usage", href: "/usage", Icon: ChartIcon },
+  { label: "Retrieval", href: "/retrieval", Icon: SearchIcon },
   { label: "Traces", href: "/planning", Icon: TraceIcon },
   { label: "Settings", href: "/settings", Icon: SettingsIcon },
 ];

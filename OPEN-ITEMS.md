@@ -35,7 +35,9 @@ Severity is about consequence if left alone, not effort to fix.
    `GET /api/retrieval/summary` + `/recent`. Remaining: **step 4**, the labelled golden
    set (`evals/retrieval_set.json` + `retrieval_run.py`, recall@k / precision@k / MRR).
    The spec defers it deliberately — live data tells you which queries deserve labels.
-   Also unbuilt: a frontend view beside the Usage tab.
+   ~~Also unbuilt: a frontend view beside the Usage tab.~~ **Frontend view built
+   2026-09-05** — "Retrieval" in the sidebar, colour-graded against the per-collection
+   distance floors so a bad number reads as bad without recalling each metric's range.
    See [docs/retrieval-quality-spec.md](docs/retrieval-quality-spec.md).
 
    **The instrumentation has almost no data to work with: 3 rows total, all in

@@ -338,6 +338,63 @@ export async function deleteMemory(
   if (!res.ok) throw new Error(`Delete memory error: ${res.status}`);
 }
 
+// ── Retrieval quality ─────────────────────────────────────────────────────────
+
+export interface RetrievalCollectionStats {
+  searches: number;
+  zero_rate: number;
+  saturation_rate: number;
+  filtered_searches: number;
+  filtered_zero_rate: number | null;
+  best_distance_p50: number | null;
+  best_distance_p90: number | null;
+  latency_ms_p50: number | null;
+  avg_returned: number;
+}
+
+export interface RetrievalCallerStats {
+  searches: number;
+  zero_rate: number;
+}
+
+export interface RetrievalSummary {
+  days: number;
+  total_searches: number;
+  collections: Record<string, RetrievalCollectionStats>;
+  callers: Record<string, RetrievalCallerStats>;
+}
+
+export interface RetrievalCall {
+  id: string;
+  created_at: string;
+  collection: string;
+  query: string;
+  filters: Record<string, unknown> | null;
+  n_requested: number;
+  n_returned: number;
+  result_ids: string[] | null;
+  best_distance: number | null;
+  caller: string;
+  latency_ms: number;
+}
+
+export async function fetchRetrievalSummary(days = 30): Promise<RetrievalSummary> {
+  const res = await fetch(`${BASE_URL}/api/retrieval/summary?days=${days}`);
+  if (!res.ok) throw new Error(`Retrieval summary error: ${res.status}`);
+  return res.json() as Promise<RetrievalSummary>;
+}
+
+export async function fetchRecentRetrievals(
+  opts: { limit?: number; collection?: string; zeroOnly?: boolean } = {},
+): Promise<RetrievalCall[]> {
+  const params = new URLSearchParams({ limit: String(opts.limit ?? 50) });
+  if (opts.collection) params.set("collection", opts.collection);
+  if (opts.zeroOnly) params.set("zero_only", "true");
+  const res = await fetch(`${BASE_URL}/api/retrieval/recent?${params}`);
+  if (!res.ok) throw new Error(`Recent retrievals error: ${res.status}`);
+  return res.json() as Promise<RetrievalCall[]>;
+}
+
 // ── Usage / cost accounting ────────────────────────────────────────────────
 
 export interface UsageBreakdownRow {
