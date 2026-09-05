@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
+import ReactMarkdown from "react-markdown";
 import {
   Box, Flex, HStack, VStack, Text, Badge, Button, Textarea, Input,
   Spinner, Portal, Tabs,
@@ -594,9 +595,13 @@ export default function TripDetailPage() {
                     </Box>
                   </HStack>
                   <Box px={5} py={4}>
-                    <Text fontSize="sm" color="text.dim" whiteSpace="pre-wrap" lineHeight="tall">
-                      {day.plan}
-                    </Text>
+                    {/* The planner writes markdown (**bold** place names, lists), so
+                        render it the way chat does rather than showing the literal
+                        asterisks. No whiteSpace="pre-wrap" here: markdown handles its
+                        own paragraph breaks, and pre-wrap would double the spacing. */}
+                    <Box fontSize="sm" color="text.dim" lineHeight="tall" className="markdown">
+                      <ReactMarkdown>{day.plan}</ReactMarkdown>
+                    </Box>
                   </Box>
                 </Box>
               ))}
