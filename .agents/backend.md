@@ -57,4 +57,6 @@ bash scripts/migrate.sh               # Alembic migrations with DB backup/auto-r
 | `OPENROUTER_MODEL` | No | Default `anthropic/claude-haiku-4-5` |
 | `VOYAGER_PLANNER` | No | `single` or `multi` (see evals-ops.md). Settable per-server with `scripts/run.sh --planner`, which is applied after the profile file is sourced so it wins over a profile value. |
 | `PHOENIX_COLLECTOR_ENDPOINT` | No | Enables tracing when set |
+| `VOYAGER_MAX_RETRIEVAL_DISTANCE` | No | Global override for the vector-search distance floor. Per-collection defaults (semantic/episodic 1.30, journals 1.45, saved_places 1.75) are usually what you want — see memory.md. |
+| `VOYAGER_MAX_RETRIEVAL_DISTANCE_<COLLECTION>` | No | Overrides one collection's floor, e.g. `..._SEMANTIC`. Wins over the global override. |
 | `BRAVE_API_KEY` | No | Enables the `web_search` MCP tool; without it the tool returns a "not configured" message instead of failing. Passed through to the MCP subprocess explicitly by `mcp_client.py` — the SDK only inherits an allowlist. |

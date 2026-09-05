@@ -700,3 +700,97 @@ def test_search_memory_can_target_one_collection():
     assert out["episode_hits"] == []
     assert len(out["preferences"]) == 1
 
+
+# ── Memories page: labelling and deletion ───────────────────────────────────
+
+def test_memories_endpoint_tags_source_from_metadata():
+    """The page labels each card chat/journal. Rows written since M-2 carry an
+    explicit `source`, which is authoritative."""
+    import asyncio
+    from app.memory import store_episode, store_preferences
+    from app.routers import memories as api
+
+    store_episode("conv-1", "Chat about Porto.", source="conversation")
+    store_episode("journal-abc", "Journal about Petra.", source="journal")
+    store_preferences(["prefers guesthouses"], source="journal")
+
+    out = asyncio.run(api.get_memories())
+    by_text = {r["text"]: r["source"] for r in out["episode_rows"] + out["preference_rows"]}
+
+    assert by_text["Chat about Porto."] == "chat"
+    assert by_text["Journal about Petra."] == "journal"
+    assert by_text["prefers guesthouses"] == "journal"
+
+
+def test_memories_endpoint_falls_back_to_id_prefix_for_legacy_rows():
+    """Rows written before M-2 have no metadata. Journal episodes are keyed
+    `journal-{entry_id}`, which is the only signal available for them."""
+    import asyncio
+    import app.memory as mem
+    from app.routers import memories as api
+
+    # Write without metadata, as the pre-M-2 code did.
+    mem._episodic().upsert(ids=["journal-legacy"], documents=["Old journal episode."])
+    mem._episodic().upsert(ids=["conv-legacy"], documents=["Old chat episode."])
+
+    out = asyncio.run(api.get_memories())
+    by_text = {r["text"]: r["source"] for r in out["episode_rows"]}
+
+    assert by_text["Old journal episode."] == "journal"
+    assert by_text["Old chat episode."] == "chat"
+
+
+def test_memories_endpoint_exposes_ids_for_deletion():
+    """Bare documents were unaddressable -- the UI could not delete a specific row."""
+    import asyncio
+    from app.memory import store_preferences, _preference_id
+    from app.routers import memories as api
+
+    store_preferences(["prefers night trains"])
+    out = asyncio.run(api.get_memories())
+
+    assert out["preference_rows"][0]["id"] == _preference_id("prefers night trains")
+    # Plain string lists stay for existing callers.
+    assert out["preferences"] == ["prefers night trains"]
+
+
+def test_delete_preference_removes_only_that_row():
+    import asyncio
+    from app.memory import store_preferences, _preference_id, search_memory
+    from app.routers import memories as api
+
+    store_preferences(["prefers night trains", "avoids early flights"])
+    asyncio.run(api.delete_preference(_preference_id("prefers night trains")))
+
+    remaining = search_memory("travel logistics", collections=("semantic",))["preferences"]
+    assert "prefers night trains" not in remaining
+    assert asyncio.run(api.get_memories())["preferences"] == ["avoids early flights"]
+
+
+def test_delete_episode_removes_only_that_row():
+    import asyncio
+    from app.memory import store_episode
+    from app.routers import memories as api
+
+    store_episode("conv-1", "Chat about Porto.")
+    store_episode("conv-2", "Chat about Lisbon.")
+    asyncio.run(api.delete_episode("conv-1"))
+
+    assert asyncio.run(api.get_memories())["episodes"] == ["Chat about Lisbon."]
+
+
+def test_deleting_a_missing_memory_404s():
+    """Chroma's delete is silent on a missing ID, so without an existence check the
+    API would report success for a row it never removed."""
+    import asyncio
+    import pytest as _pytest
+    from fastapi import HTTPException
+    from app.routers import memories as api
+
+    with _pytest.raises(HTTPException) as exc:
+        asyncio.run(api.delete_episode("no-such-id"))
+    assert exc.value.status_code == 404
+
+    with _pytest.raises(HTTPException) as exc:
+        asyncio.run(api.delete_preference("no-such-id"))
+    assert exc.value.status_code == 404

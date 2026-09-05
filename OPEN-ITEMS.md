@@ -26,7 +26,8 @@ Severity is about consequence if left alone, not effort to fix.
 1. **Product flow** — the chat→trip→itinerary path is the current focus. B-9, B-10 and
    B-11, B-7 and B-3 are all fixed as of 2026-09-03, as are the R-1..R-3 refactors.
    Backend suite is green (73 passed). Next: **S-13** (calibrate the quality judge) or
-   the retrieval instrumentation.
+   the retrieval instrumentation. **M-2, M-9 and M-10 landed 2026-09-04** (metadata
+   provenance, per-collection distance floors, facet-based preference retrieval).
 2. **S-13** — calibrate the quality judge. Gates any per-node model decision, since that
    verdict would rest entirely on an unmeasured judge. *(~15 hand labels)*
 3. **Retrieval instrumentation** — spec steps 1–3 **done 2026-09-03**: `retrieval_log`
@@ -36,11 +37,21 @@ Severity is about consequence if left alone, not effort to fix.
    The spec defers it deliberately — live data tells you which queries deserve labels.
    Also unbuilt: a frontend view beside the Usage tab.
    See [docs/retrieval-quality-spec.md](docs/retrieval-quality-spec.md).
+
+   **The instrumentation has almost no data to work with: 3 rows total, all in
+   `moiraine`, from a single planning run** (checked 2026-09-04 across all 7
+   profiles). Labelling a golden set now means guessing at the query distribution.
+   Exercising the chat→trip→itinerary flow populates `retrieval_log` first, and the
+   golden set then writes itself from real queries. Those 3 rows are also what
+   motivated M-9 and M-10 — one real logged query was enough to expose both bugs,
+   which is the argument for generating traffic before labelling.
 4. ~~**B-7 / B-3**~~ — both fixed 2026-09-03.
 5. ~~**R-1..R-3**~~ — all three done 2026-09-03.
 
-Not urgent but worth naming: **M-2** is the structural unlock under M-3/M-4/M-5 and the
-open half of B-2 — none of those move until preferences carry provenance.
+**M-2 shipped 2026-09-04**, so M-3/M-4/M-5 and the open half of B-2 are no longer
+blocked on provenance — preferences now carry `created_at`, `source` and
+`destination`. M-4 (recency-based contradiction handling) is the one those metadata
+fields most directly enable, and is now mechanical rather than structural.
 
 Web search **shipped 2026-09-03** (Brave, as an MCP tool) for the single-agent chat
 loop. Two follow-ups remain: the four planner researchers still list "web search
@@ -81,8 +92,13 @@ The episode half is fixed: PATCH now re-extracts when `body` changed, and
 rather than the original (verified: one row, updated content, no duplicate).
 
 Still open: derived **preferences** survive an edit, including ones the user just edited
-away. They have no back-reference to the entry that produced them, so there is nothing
-to revoke — the same missing-provenance problem as M-2. Fix this with M-2, not before.
+away. M-2 added `source` and `destination`, but *not* a back-reference to the specific
+entry that produced a preference, so automatic revocation is still not possible — a
+per-entry `entry_id` in the metadata is what that would need.
+
+Partially mitigated by M-13 (2026-09-04): the user can now delete a stale preference
+by hand from the Memories page. That is a manual workaround, not a fix — it requires
+noticing the stale row.
 
 **Severity:** low-medium — silent staleness, no crash.
 
@@ -372,16 +388,69 @@ in November`).
 Purge rather than rebuild because preferences are LLM-distilled and exist only
 in Chroma — nothing in SQLite reconstructs them. The collection regrows from use.
 
-### M-2 — `store_preferences` has no metadata · **structural unlock**
+### ~~M-2 — `store_preferences` has no metadata~~ · **done 2026-09-04**
 
-No `created_at`, `source`, or `trip_id`; rows are written with no metadata at
-all. This is the blocker under M-3, M-4, and per-trip scoping. Chroma metadata
-is schemaless so no Alembic migration is needed. Now cheaper than when this was
-written: M-1 emptied the collection, so there is nothing to backfill — new rows
-can carry metadata from the first write.
+Rows were written with no metadata at all, blocking M-3, M-4, and per-trip
+scoping. `store_preferences` and `store_episode` now write `created_at`,
+`source` (`conversation` | `journal`), and `destination` when the caller knows
+it — the journal path passes `trip_destination`, the conversation path has no
+destination at extraction time and omits the key. Chroma rejects `None`
+metadata values, so an unknown destination is omitted rather than written null
+(regression test covers this). No Alembic migration: Chroma metadata is
+schemaless, and the M-1 purge meant there was nothing to backfill.
 
-Note `journals` and `saved_places` already do this correctly (both carry
-`trip_id` and filter on it). Only `semantic` and `episodic` skipped it.
+Note `journals` and `saved_places` already did this correctly (both carry
+`trip_id` and filter on it). Only `semantic` and `episodic` had skipped it.
+
+### ~~M-9 — Retrieval padded results with irrelevant rows~~ · **fixed 2026-09-04**
+
+Chroma returns exactly `n_results` rows whenever the collection holds that many,
+so no search could report "nothing relevant". The one real logged planning query
+("I plan to be there between 11am and 6pm") returned five preferences at
+distances 1.24–1.53 — none a match — and the planner handed all five to the
+critic as stated user intent. Fixed with a per-collection distance floor
+(`_max_distance`, `memory.py`), applied to all four collections.
+
+Per-collection because the collections hold different kinds of text and sit in
+different distance regimes. A single 1.30 floor — correct for preferences —
+returned **zero** results for "dinner recommendations" over 13 real saved
+restaurants on `rand`, which is a worse failure than the padding. Saved places
+are short noun phrases; they embed far from a full question however relevant.
+Defaults: semantic/episodic 1.30, journals 1.45, saved_places 1.75. Calibrated
+against live egwene/rand/moiraine data and **specific to all-MiniLM-L6-v2** —
+recalibrate if the embedding model changes (Month 6 hosted-embeddings plan).
+
+### ~~M-10 — Planner retrieved preferences against raw logistics text~~ · **fixed 2026-09-04**
+
+`load_user_context` embedded the raw user message against the preference
+collection. Preferences are trait statements; a planning message is mostly
+logistics, so the match ran on the wrong axis — the logged query returned three
+*timing* preferences because its text was dominated by time-of-day tokens.
+
+Now retrieves against six facet probes (food, accommodation, pace, activities,
+budget, transport) plus the raw message, merged by best-distance-per-ID and
+capped at 8. On `moiraine` this turned one weak timing hit into eight genuinely
+useful traits (museum access, pacing, walkability, depth-over-surface). Costs no
+API calls — MiniLM runs locally.
+
+The facet list is hand-written and therefore a guess at the preference space. It
+is a stopgap for the better version: `load_context` runs *before*
+`classify_intent` in the graph, so no parsed intent is available to retrieve
+against. Reordering those nodes would let retrieval use the classifier's
+structured output instead of fixed probes.
+
+### M-11 — `chroma_rand` still holds pre-fix duplicate rows
+
+Found while measuring near-duplicates 2026-09-04. `rand`'s `semantic` collection
+has 3 exact-duplicate pairs at cosine 1.0 (`enjoys landscape photography`,
+`prefers guesthouses over hotels`, `enjoys meeting other travelers`) with legacy
+numeric `abs(hash())` IDs — written before the sha256 fix, and M-1 only purged
+`egwene`. 35 of 78 rows are redundant at cosine 0.80.
+
+Not a regression: the purged profiles (`egwene` 46 rows, `moiraine` 38) show
+**zero** near-duplicates at 0.85, confirming both the ID fix and the prompt fix
+hold. `scripts/purge_preferences.py` already exists and is idempotent with a
+dry-run mode. Low priority — `rand` is not the primary dev profile.
 
 ### M-3 — Semantic near-duplicates will re-accumulate
 
@@ -394,13 +463,25 @@ embedding dedup (~0.88 cosine), periodic compaction, or a cap with LRU.
 ### M-4 — Nothing reconciles contradictions or bounds growth
 
 No cap, TTL, aging, compaction, or contradiction handling. Growth is monotonic at
-~3 preferences per conversation. Depends on M-2.
+~3 preferences per conversation. **Unblocked by M-2 (2026-09-04)**: rows now
+carry `created_at`, so "latest wins" — the cheapest reconciliation strategy — is
+now implementable. Note only rows written after that date have it; a cap or TTL
+needs a null-safe default for older rows.
 
 ### M-5 — Preferences aren't scoped to a trip or destination
 
 `enjoys traditional Portuguese cuisine and fado music` is globally retrievable
-when planning Tokyo. Depends on M-2; the filter pattern already exists in
-`search_journals` (`memory.py:103`).
+when planning Tokyo. **Unblocked by M-2 (2026-09-04)** — new preference rows now
+carry `destination`, though it is recorded and deliberately *not* yet filtered
+on. The filter pattern already exists in `search_journals`.
+
+The open question is not mechanical but a policy one: which preferences are
+destination-conditional and which are durable. "Prefers street food" learned on
+a Lisbon trip should stay global; "enjoys fado" should not. Filtering on
+`destination` indiscriminately would discard most of the collection on every
+new destination. Wants live retrieval data behind the decision rather than a
+guess made at write time. Note existing rows predate the metadata and carry no
+`destination`, so any filter needs a null-safe default (treat as global).
 
 ### M-6 — Every exchange re-extracts the entire transcript · **not worth fixing yet**
 
@@ -428,6 +509,31 @@ climbs meaningfully as a share of spend — both checkable from `usage_log`.
 3 duplicate document groups among 97 episodes. Here the ID (`conversation_id`,
 `memory.py:41`) *is* stable, so these are genuinely distinct conversations that
 produced identical summaries. Lower severity than the preference case.
+
+### ~~M-12 — Memories page mislabelled journal episodes as conversations~~ · **fixed 2026-09-04**
+
+The episodic section was headed "Past conversations", but that collection also
+holds one summary per journal entry (`journal-{entry_id}`). On `moiraine` 9 of
+10 rows were journal entries; on `egwene` 12 of 114. The endpoint returned bare
+`documents` and discarded IDs, so the frontend could not have told them apart.
+
+Fixed: sections are now named for the collections (**Semantic** / **Episodic**),
+and each card carries a chat/journal source tag. `_source_of` prefers the M-2
+`source` metadata and falls back to the `journal-` ID prefix for older rows.
+
+### ~~M-13 — No way to delete a stored memory~~ · **done 2026-09-04**
+
+`DELETE /api/memories/{episodic|semantic}/{id}`, wired to a per-card control on
+the Memories page behind the `useConfirm` dialog (B-9). This is the first delete
+path against `semantic` — the memory-quality analysis called it out as blocked,
+since the old per-process `abs(hash())` IDs meant no caller could recompute the
+ID a previous process wrote. Content-hash IDs made it addressable.
+
+Chroma's `delete` is silent on a missing ID, so `_delete_by_id` checks existence
+first and the route 404s rather than reporting a false success. No undo, and no
+tombstone: a deleted preference can be re-derived by a later extraction, and a
+journal episode returns if its entry is edited (PATCH re-runs extraction). The
+confirm dialog says so rather than implying permanence.
 
 ### M-8 — `/api/memories` returns every row unpaginated
 

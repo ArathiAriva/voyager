@@ -304,15 +304,38 @@ export async function deletePlace(tripId: string, placeId: string): Promise<void
 
 // ── Memories ──────────────────────────────────────────────────────────────────
 
+/** Where a memory was distilled from. */
+export type MemorySource = "chat" | "journal";
+
+export interface MemoryRow {
+  id: string;
+  text: string;
+  source: MemorySource;
+  /** ISO timestamp; null for rows written before provenance metadata (M-2). */
+  created_at: string | null;
+}
+
 export interface Memories {
   episodes: string[];
   preferences: string[];
+  episode_rows: MemoryRow[];
+  preference_rows: MemoryRow[];
 }
 
 export async function fetchMemories(): Promise<Memories> {
   const res = await fetch(`${BASE_URL}/api/memories`);
   if (!res.ok) throw new Error(`Memories API error: ${res.status}`);
   return res.json() as Promise<Memories>;
+}
+
+export async function deleteMemory(
+  kind: "episodic" | "semantic",
+  id: string,
+): Promise<void> {
+  const res = await fetch(`${BASE_URL}/api/memories/${kind}/${encodeURIComponent(id)}`, {
+    method: "DELETE",
+  });
+  if (!res.ok) throw new Error(`Delete memory error: ${res.status}`);
 }
 
 // ── Usage / cost accounting ────────────────────────────────────────────────
