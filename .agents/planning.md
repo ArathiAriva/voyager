@@ -5,7 +5,17 @@ Full design doc: [docs/multi-agent-planning.md](../docs/multi-agent-planning.md)
 ## Routing
 
 `app/planning/router.py`:
-- `is_planning_request(text)` — substring match against `_PLANNING_PHRASES` ("plan my", "itinerary", "days in", …) and `_REVISION_PHRASES` ("find cheaper restaurants", "change day", …).
+- `is_planning_request(text)` — substring match against `_PLANNING_PHRASES` ("plan my", "itinerary", "days in", …) and `_REVISION_PHRASES` ("find cheaper restaurants", "change day", …), **plus a shape rule** for revisions the phrase list misses: a day reference (`day 3`, `the second day`, `morning`/`afternoon`/`evening`) **and** an edit verb (`add`, `swap`, `drop`, `instead`, …) both present.
+
+  Both halves are required, so "what did I do on day 2?" stays a question while
+  "make day 2 more relaxed" routes to the graph. This matters more than it looks:
+  a revision that misses the router falls through to the single-agent loop, where
+  `set_itinerary` replaces the *entire* itinerary — so under-matching risks losing
+  days. Measured against natural phrasings the phrase list alone caught 2 of 8;
+  with the shape rule, 7 of 8 with no false positives on a question/chit-chat set.
+  The remaining miss uses a weekday ("more time downtown on Friday") rather than a
+  day number; matching weekdays was rejected as too false-positive-prone, and the
+  `set_itinerary` guard is the backstop.
 - `run_planning_graph(user_message, session, trip_id, emit_step)` — builds the initial `PlanningState` and calls `planning_graph.ainvoke`; the DB session and an `emit_step` callback (SSE progress labels) are passed via LangGraph `config["configurable"]`.
 
 Non-planning messages never touch the graph. Graph failure falls back to the single-agent loop in `routers/conversations.py`.

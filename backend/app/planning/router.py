@@ -4,6 +4,7 @@ Planning graph router — detects planning intent and invokes the LangGraph grap
 
 import itertools
 import logging
+import re
 import time
 from collections.abc import Callable, Coroutine
 from typing import Any
@@ -30,12 +31,37 @@ _REVISION_PHRASES = (
     "swap the", "replace the",
 )
 
+# A revision that misses this list falls through to the single-agent loop, which
+# is the dangerous path: set_itinerary replaces the whole itinerary, so an edit
+# there risks losing days. Measured against natural phrasings, the list above
+# caught only 2 of 8 ("change day ...", "update the itinerary ..."); the rest --
+# "make day 2 more relaxed", "do the museum on day 2 instead", "add a coffee stop
+# on the second day" -- routed to chat.
+#
+# Rather than chase every verb, match the shape these requests share: a reference
+# to a specific day of an itinerary. Requires BOTH a day reference and an edit
+# verb, so "what did I do on day 2?" stays a question rather than triggering a
+# replan.
+_DAY_REFERENCE = re.compile(
+    r"\b(day\s*\d+|"
+    r"(?:first|second|third|fourth|fifth|sixth|seventh|last|final)\s+day|"
+    r"morning|afternoon|evening)\b",
+    re.IGNORECASE,
+)
+_EDIT_VERB = re.compile(
+    r"\b(add|remove|drop|swap|replace|change|move|shift|make|adjust|tweak|"
+    r"rearrange|reorder|instead|rather|more|less|skip|cut|extend|shorten)\b",
+    re.IGNORECASE,
+)
+
 StepEmitter = Callable[[str], Coroutine[Any, Any, None]]
 
 
 def is_planning_request(text: str) -> bool:
     lower = text.lower()
-    return any(phrase in lower for phrase in _PLANNING_PHRASES + _REVISION_PHRASES)
+    if any(phrase in lower for phrase in _PLANNING_PHRASES + _REVISION_PHRASES):
+        return True
+    return bool(_DAY_REFERENCE.search(lower) and _EDIT_VERB.search(lower))
 
 
 async def run_planning_graph(

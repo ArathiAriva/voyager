@@ -33,6 +33,21 @@ backend/app/
 
 `TOOL_SCHEMAS` is a **list**; use `tool_by_name(name)` / `tools_named(*names)` for lookups. Executors: `create_trip`, `update_trip`, `get_trips`, `set_itinerary`, `save_place`, `search_places`, `search_journal`, `search_memory`, plus MCP tools (`get_weather`, `get_exchange_rate`) proxied through `mcp_client.py`.
 
+**Editing a trip.** `update_trip` patches metadata (`destination`, `dates`,
+`status`, `emoji`, `summary`, `tags`) — only the fields passed. Itineraries are
+separate: `set_itinerary` **replaces the whole itinerary**, so an edit must pass
+back every day, not just the changed one.
+
+That replace semantic is a data-loss hazard, and two guards exist because a tool
+description is guidance rather than a guarantee:
+- `get_trips` returns each trip's `itinerary`. It previously did not, so the model
+  was editing blind — asked to change one day it could only regenerate all of them
+  from conversational memory, or write the one day and delete the rest.
+- `_execute_set_itinerary` **refuses** a call that would shrink an existing
+  itinerary, returning an error that explains how to proceed. Growing and the
+  first write are unaffected. A genuinely shorter trip needs `update_trip` on the
+  dates first, after confirming with the user.
+
 ## Conventions
 
 - Never instantiate an LLM client outside `app/claude.py`; import `get_client()` and `get_model()`.

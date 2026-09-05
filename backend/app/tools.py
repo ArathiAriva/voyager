@@ -218,7 +218,11 @@ TOOL_SCHEMAS = [
                 "Use this after planning an upcoming or active trip with the user. "
                 "Call get_trips first to find the trip ID. "
                 "Each day should have a day number, optional date (YYYY-MM-DD), optional title, "
-                "and a plan describing activities, logistics, and recommendations for that day."
+                "and a plan describing activities, logistics, and recommendations for that day. "
+                "REPLACES the entire itinerary — any day you omit is deleted. "
+                "To change one day, call get_trips first, then pass back every existing day "
+                "with only that day modified. Never call this with a single day unless the "
+                "trip is genuinely one day long."
             ),
             "parameters": {
                 "type": "object",
@@ -424,7 +428,32 @@ async def _execute_set_itinerary(args: dict, session: AsyncSession) -> str:
     trip = await session.get(TripORM, trip_id)
     if not trip:
         return json.dumps({"error": f"Trip {trip_id} not found."})
-    trip.itinerary = args.get("days", [])
+    days = args.get("days", [])
+    existing = trip.itinerary or []
+    # Guard against the silent-truncation case: this tool replaces the whole
+    # itinerary, so a model asked to "change day 3" that passes back only day 3
+    # would delete the other days. The description warns about it, but a prompt is
+    # guidance, not a guarantee -- and the loss is unrecoverable and invisible.
+    # Shrinking is legitimate when deliberate (a trip genuinely got shorter), so
+    # this refuses rather than silently merging, and tells the model how to proceed.
+    if existing and len(days) < len(existing):
+        submitted = sorted(d.get("day") for d in days if d.get("day") is not None)
+        logger.warning(
+            "Tool set_itinerary: refused truncation for trip %s (%d existing days, %d submitted: %s)",
+            trip.id[:8], len(existing), len(days), submitted,
+        )
+        return json.dumps({
+            "error": (
+                f"This would replace a {len(existing)}-day itinerary with {len(days)} day(s), "
+                f"deleting the rest. set_itinerary replaces the entire itinerary. "
+                f"Pass back all {len(existing)} days with only the ones you mean to change "
+                f"modified. If the trip really is now {len(days)} day(s) long, confirm with "
+                f"the user first, then call update_trip to change the dates before retrying."
+            ),
+            "existing_days": len(existing),
+            "submitted_days": len(days),
+        })
+    trip.itinerary = days
     await session.commit()
     await session.refresh(trip)
     logger.info("Tool set_itinerary: saved %d days for trip %s (%s)", len(trip.itinerary), trip.id[:8], trip.destination)
@@ -452,6 +481,11 @@ async def _execute_get_trips(args: dict, session: AsyncSession) -> str:
                 "dates": t.dates,
                 "status": t.status,
                 "summary": t.summary,
+                # The itinerary is included because set_itinerary replaces the whole
+                # thing. Without it the model was editing blind: asked to change one
+                # day it could only regenerate every day from conversational memory,
+                # or write the single changed day and silently destroy the rest.
+                "itinerary": t.itinerary,
             }
             for t in trips
         ]

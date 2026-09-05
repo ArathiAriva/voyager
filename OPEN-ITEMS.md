@@ -298,6 +298,39 @@ and the three conversation deletes. Each dialog names what else disappears (a tr
 its journal entries and saved places with it) rather than asking a generic "are you sure".
 Still no undo; confirmation is the only guard.
 
+### ~~B-12 — Itinerary edits could silently delete days~~ · **fixed 2026-09-05**
+
+`set_itinerary` replaces the entire itinerary (`trip.itinerary = args["days"]`),
+but `get_trips` returned only id/destination/dates/status/summary — no
+itinerary. So on the single-agent path the model was editing blind: asked to
+"change day 3" it could either regenerate every day from conversational memory,
+losing agreed detail, or write only day 3 and **delete days 1, 2 and 4**.
+Unrecoverable and invisible — no error, no warning, the days are simply gone.
+
+Reachable in practice, not just in theory. The router matched revisions by
+literal substring, and against natural phrasings it caught only **2 of 8**
+("change day …", "update the itinerary …"). The other six — "make day 2 more
+relaxed", "do the museum on day 2 instead", "add a coffee stop on the second
+day" — fell through to exactly the unsafe path. The multi-agent graph was never
+affected: it loads `existing_itinerary` when intent is `revision`
+(`graph.py:139-146`).
+
+Three fixes, deliberately layered because a tool description is guidance, not a
+guarantee:
+1. `get_trips` now returns `itinerary`, so the model can read before writing.
+2. `set_itinerary`'s description states that it replaces everything and that a
+   single-day edit must pass back all days.
+3. `_execute_set_itinerary` **refuses** a call that shrinks an existing
+   itinerary, returning an error explaining how to proceed. Growing and the first
+   write are unaffected; a genuinely shorter trip changes `dates` via
+   `update_trip` first.
+
+Router also widened with a shape rule (day reference **and** edit verb): 7 of 8
+revisions now route to the graph, with no false positives on a question set. The
+remaining miss uses a weekday ("more time downtown on Friday"); matching weekdays
+was rejected as too false-positive-prone, and fix 3 is the backstop. 19 new
+router tests — the router had none.
+
 ### ~~B-5 — Journal extraction leaks cost attribution~~ · **fixed 2026-09-04**
 
 `conversations.py` set `usage_context.set("memory_extraction")` before its
