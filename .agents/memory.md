@@ -34,6 +34,14 @@ profiles affected by the original bug.
 **Spawn background extraction via the module's `_spawn_extraction` helper, never
 `asyncio.create_task` directly.**
 
+**Extraction is durable across restarts.** The LLM call and the Chroma write are
+seconds apart, and a process teardown in between used to lose the result silently —
+`except Exception` does not catch `CancelledError` (B-14). `conversations.extracted_through`
+is a watermark set only after a successful write; `retry_unextracted()` re-extracts
+conversations whose newest message is later than their watermark at startup, bounded
+to 20. Idempotent, since episodes upsert on `conversation_id` and preferences on a
+content hash. Cancellation logs a warning and re-raises rather than vanishing.
+
 **`store_preferences` dedupes at write time.** Each incoming preference is checked
 against its nearest existing row; within `VOYAGER_PREFERENCE_DEDUPE_DISTANCE`
 (default **0.55 L2**, not cosine) it is skipped and the surviving row's

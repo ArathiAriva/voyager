@@ -935,3 +935,100 @@ def test_unknown_database_url_is_allowed():
     from evals._harness import guard_profile
 
     guard_profile(None)
+
+
+# ── Extraction durability (B-14) ────────────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_cancelled_extraction_is_logged_and_leaves_no_watermark():
+    """B-14: `except Exception` does not catch CancelledError (a BaseException since
+    3.8), so a process teardown between the LLM call and the Chroma write lost the
+    extraction in total silence -- while the user had been told it was noted."""
+    import asyncio as _asyncio
+    from unittest.mock import patch as _patch, MagicMock as _MagicMock
+    from app.routers import conversations as conv
+
+    async def ok(*a, **k):
+        message = _MagicMock()
+        message.content = '{"episode": "e", "preferences": ["p"]}'
+        choice = _MagicMock()
+        choice.message = message
+        response = _MagicMock()
+        response.choices = [choice]
+        return response
+
+    def die(*a, **k):
+        raise _asyncio.CancelledError()
+
+    # Assert on the logger directly rather than via caplog: the project installs its
+    # own logging config, so caplog's handler does not always see these records.
+    warnings: list[str] = []
+    client = _MagicMock(chat=_MagicMock(completions=_MagicMock(create=ok)))
+    with _patch.object(conv, "get_client", return_value=client), \
+         _patch("app.memory.store_episode", side_effect=die), \
+         _patch.object(conv.logger, "warning", side_effect=lambda msg, *a: warnings.append(msg % a if a else msg)):
+        with _pytest_raises_cancelled():
+            await conv._run_extraction("abc12345", [{"role": "user", "content": "x"}])
+
+    # Re-raised above, so cancellation still propagates rather than being swallowed.
+    assert any("CANCELLED" in w for w in warnings), warnings
+
+
+def _pytest_raises_cancelled():
+    import asyncio as _asyncio
+    import pytest as _pytest
+    return _pytest.raises(_asyncio.CancelledError)
+
+
+@pytest.mark.asyncio
+async def test_retry_finds_conversations_whose_memory_was_never_written():
+    """A conversation whose newest message is later than its watermark has messages
+    whose memory was never persisted. That is what the startup retry looks for."""
+    import uuid as _uuid
+    from datetime import datetime as _dt, timezone as _tz
+    from unittest.mock import patch as _patch, MagicMock as _MagicMock
+    from sqlalchemy import select as _select
+    from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
+    from app.db import Base as _Base
+    from app.models.orm import ConversationORM, MessageORM
+    from app.routers import conversations as conv
+    import app.db as _db
+
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False)
+    async with engine.begin() as c:
+        await c.run_sync(_Base.metadata.create_all)
+    Session = async_sessionmaker(engine, expire_on_commit=False)
+
+    now = _dt.now(_tz.utc)
+    cid = str(_uuid.uuid4())
+    async with Session() as s:
+        s.add(ConversationORM(id=cid, title="t", created_at=now, updated_at=now))
+        s.add(MessageORM(id=str(_uuid.uuid4()), conversation_id=cid, role="user",
+                         content="I don't drink alcohol", created_at=now))
+        await s.commit()
+
+    async def ok(*a, **k):
+        message = _MagicMock()
+        message.content = '{"episode": "e", "preferences": ["does not drink alcohol"]}'
+        choice = _MagicMock()
+        choice.message = message
+        response = _MagicMock()
+        response.choices = [choice]
+        return response
+
+    client = _MagicMock(chat=_MagicMock(completions=_MagicMock(create=ok)))
+    with _patch.object(_db, "SessionLocal", Session), \
+         _patch.object(conv, "get_client", return_value=client), \
+         _patch("app.memory.store_episode"), _patch("app.memory.store_preferences"):
+        assert await conv.retry_unextracted() == 1
+        import asyncio as _asyncio
+        await _asyncio.gather(*list(conv._extraction_tasks))
+
+        async with Session() as s:
+            row = (await s.execute(_select(ConversationORM))).scalars().first()
+            assert row.extracted_through is not None, "watermark must be set on success"
+
+        # Idempotent: nothing left to do on a second pass.
+        assert await conv.retry_unextracted() == 0
+
+    await engine.dispose()

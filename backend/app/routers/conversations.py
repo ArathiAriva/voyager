@@ -157,6 +157,39 @@ _EXTRACTION_CONCURRENCY = 4
 _extraction_semaphore = asyncio.Semaphore(_EXTRACTION_CONCURRENCY)
 
 
+def _latest_message_time(history: list[dict]) -> datetime | None:
+    """Newest `created_at` in the history being extracted, if the caller supplied one.
+
+    The tool-loop builds its history as plain dicts, so timestamps may be absent --
+    in which case the watermark falls back to "now" at write time, which is still
+    monotonic enough to tell a retry that this conversation has been processed.
+    """
+    times = [m.get("created_at") for m in history if isinstance(m.get("created_at"), datetime)]
+    return max(times) if times else None
+
+
+async def _set_extraction_watermark(conversation_id: str, watermark: datetime | None) -> None:
+    """Record how far extraction has successfully written, in its own session.
+
+    Its own session because this runs in a background task, long after the request
+    session is gone. Fail-open like every other accounting write: a watermark that
+    does not persist costs a redundant re-extraction, which is idempotent, whereas
+    raising here would lose an extraction that actually succeeded.
+    """
+    from app.db import SessionLocal
+
+    try:
+        async with SessionLocal() as session:
+            conversation = await session.get(ConversationORM, conversation_id)
+            if conversation is None:
+                return
+            conversation.extracted_through = watermark or datetime.now(timezone.utc)
+            await session.commit()
+    except Exception:
+        logger.exception("conv=%s | could not record extraction watermark (non-fatal)",
+                         conversation_id[:8])
+
+
 def _spawn_extraction(conversation_id: str, history: list[dict]) -> None:
     """Start a background memory extraction, retaining a reference until it finishes."""
     task = asyncio.create_task(_extract_and_store_memory(conversation_id, history))
@@ -174,9 +207,69 @@ async def _extract_and_store_memory(conversation_id: str, history: list[dict]) -
         await _run_extraction(conversation_id, history)
 
 
+async def retry_unextracted(limit: int = 20) -> int:
+    """Re-extract conversations whose memory was never persisted. Returns the count.
+
+    Called at startup. Extraction is a background task, so an interrupted process
+    loses whatever was in flight -- and before the watermark existed there was no
+    way to know it had happened (B-14). A conversation whose newest message is
+    later than `extracted_through` has messages whose memory was never written.
+
+    Safe to re-run: episodes upsert on conversation_id and preferences on a content
+    hash, so a redundant pass costs one LLM call and changes nothing. Bounded by
+    `limit` so a profile with a long backlog does not fire hundreds of calls at
+    boot -- the semaphore bounds concurrency, this bounds the batch.
+    """
+    from app.db import SessionLocal
+    from sqlalchemy import func
+
+    try:
+        async with SessionLocal() as session:
+            newest = (
+                select(MessageORM.conversation_id,
+                       func.max(MessageORM.created_at).label("newest"))
+                .group_by(MessageORM.conversation_id)
+                .subquery()
+            )
+            rows = (await session.execute(
+                select(ConversationORM.id, newest.c.newest)
+                .join(newest, newest.c.conversation_id == ConversationORM.id)
+                .where(
+                    (ConversationORM.extracted_through.is_(None))
+                    | (ConversationORM.extracted_through < newest.c.newest)
+                )
+                .order_by(newest.c.newest.desc())
+                .limit(limit)
+            )).all()
+
+            for conversation_id, _ in rows:
+                messages = (await session.execute(
+                    select(MessageORM)
+                    .where(MessageORM.conversation_id == conversation_id)
+                    .order_by(MessageORM.created_at)
+                )).scalars().all()
+                history = [
+                    {"role": m.role, "content": m.content, "created_at": m.created_at}
+                    for m in messages
+                ]
+                if history:
+                    _spawn_extraction(conversation_id, history)
+
+        if rows:
+            logger.info("startup | re-extracting %d conversation(s) with unpersisted memory",
+                        len(rows))
+        return len(rows)
+    except Exception:
+        logger.exception("startup | could not scan for unextracted conversations (non-fatal)")
+        return 0
+
+
 async def _run_extraction(conversation_id: str, history: list[dict]) -> None:
     try:
         usage_context.set("memory_extraction")
+        # Taken before the LLM call so it describes the transcript being extracted,
+        # not messages that arrive while it runs -- those need their own pass.
+        watermark = _latest_message_time(history)
         client = get_client()
         transcript = "\n".join(
             f"{m['role'].upper()}: {m['content']}"
@@ -207,7 +300,22 @@ async def _run_extraction(conversation_id: str, history: list[dict]) -> None:
             memory.store_episode(conversation_id, episode, source="conversation")
         if preferences:
             memory.store_preferences(preferences, source="conversation")
+        # Watermark last, and only on success: it means "memory for this
+        # conversation is persisted through here". A lagging watermark is what
+        # tells a retry there is work to do.
+        await _set_extraction_watermark(conversation_id, watermark)
         logger.info("conv=%s | memory extraction complete: 1 episode, %d preferences", conversation_id[:8], len(preferences))
+    except asyncio.CancelledError:
+        # `except Exception` does not catch this -- CancelledError is a
+        # BaseException since 3.8 -- which is why a process teardown between the
+        # LLM call and the Chroma write lost the extraction in total silence
+        # (B-14). Log it and re-raise so cancellation still propagates.
+        logger.warning(
+            "conv=%s | memory extraction CANCELLED before the write -- the LLM call "
+            "was paid for and nothing was stored. The watermark is unchanged, so this "
+            "conversation will be re-extracted.", conversation_id[:8],
+        )
+        raise
     except Exception:
         logger.exception("conv=%s | memory extraction failed (non-fatal)", conversation_id[:8])
 

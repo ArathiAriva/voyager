@@ -75,6 +75,12 @@ _SEED_TRIPS = [
 async def startup() -> None:
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+    # Re-extract any conversation whose memory never got written -- an interrupted
+    # process loses in-flight extractions silently (B-14). Idempotent and bounded;
+    # fail-open, since a failed scan must not stop the server booting.
+    from app.routers.conversations import retry_unextracted
+    await retry_unextracted()
+
     if not flags.seed_demo_trips():
         logger.info("startup | demo-trip seeding disabled (VOYAGER_SEED_DEMO_TRIPS)")
         return

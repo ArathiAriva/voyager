@@ -83,6 +83,17 @@ class ConversationORM(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
     updated_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
 
+    # How far memory extraction has successfully written for this conversation.
+    # Extraction is a background task: the LLM call and the Chroma write are
+    # seconds apart, and anything that kills the process in between -- a deploy, a
+    # crash, uvicorn --reload picking up an edit -- loses the memory silently. The
+    # user is told "I'll remember that" and nothing is stored (B-14).
+    #
+    # Set only after the write succeeds, so a lagging watermark means "this
+    # conversation has messages whose memory was never persisted", which is
+    # exactly what a retry needs to know.
+    extracted_through: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
     messages: Mapped[list["MessageORM"]] = relationship("MessageORM", back_populates="conversation", order_by="MessageORM.created_at")
 
 

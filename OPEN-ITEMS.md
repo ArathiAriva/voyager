@@ -300,6 +300,47 @@ and the three conversation deletes. Each dialog names what else disappears (a tr
 its journal entries and saved places with it) rather than asking a generic "are you sure".
 Still no undo; confirmation is the only guard.
 
+### ~~B-14 — An interrupted process loses memory extraction silently~~ · **fixed 2026-09-05**
+
+Observed live. The user said "I don't drink alcohol"; the agent replied "I'll keep
+that in mind for future recommendations"; **nothing was stored.** `usage_log` shows
+the extraction LLM call ran (259 completion tokens), and re-running the extractor
+on that transcript produces `does not drink alcohol` correctly — so extraction
+worked and the *write* never happened. The stored episode was still the previous
+run's.
+
+Two causes, both now fixed:
+
+1. **`except Exception` does not catch `CancelledError`** — it has been a
+   `BaseException` since 3.8. So a process teardown between the LLM call and the
+   Chroma write lost the extraction with no exception, no log line, and no trace.
+   The window is a few hundred ms, and anything that ends the process inside it
+   hits: a deploy, a crash, or `uvicorn --reload` picking up an edit. (The trigger
+   here was self-inflicted — backend edits during a live session — but the failure
+   mode is real for any restart.)
+2. **Nothing recorded that extraction had happened**, so there was no way to detect
+   or retry a loss.
+
+`conversations.extracted_through` is a watermark set **only after a successful
+write**. A conversation whose newest message is later than its watermark has memory
+that was never persisted, and `retry_unextracted()` re-extracts those at startup
+(bounded to 20). Safe to re-run: episodes upsert on `conversation_id` and
+preferences on a content hash. Cancellation now logs a warning and re-raises.
+
+Same defect *class* as B-1/B-4/B-11 (background work vanishing) but a different
+mechanism: those were garbage collection, this is process teardown, and the strong
+task references that fixed them cannot help.
+
+Verified on the live `moiraine` profile: the restart re-extracted the affected
+conversation and `does not drink alcohol` is now stored.
+
+**Note:** the re-extraction also produced `dislikes alcohol` and `travels solo`
+alongside the existing rows. Both sit above the 0.55 write-time dedup threshold
+(`does not drink alcohol` ~ `dislikes alcohol` measures 0.688), which is the
+conservative calibration working as designed — over-merging silently loses a real
+trait, while a kept near-duplicate costs one retrieval slot. Worth revisiting under
+M-4 with more data, not retuning on one example.
+
 ### B-13 — The planner can silently create a duplicate trip
 
 `_resolve_trip_id` (`planning/graph.py:207`) matches the brief's destination
