@@ -36,6 +36,20 @@ whether the agent obeyed. Spec: `docs/safety-evals-spec.md`. Status and open ite
   (`python -m evals.safety_ledger` → `SAFETY-LEDGER.md`).
 - `safety_rejudge.py` — replays a judge over stored replies, to isolate judge changes.
 
+**Both suites refuse to run against a reserved profile.** The harnesses do not pick a
+profile — they adopt whatever database the backend on `--base-url` reports from
+`/health` (R-3) — so leaving a personal backend on :8060 is enough to point a suite at
+it. `guard_profile` (`evals/_harness.py`) checks the adopted name before any LLM spend
+and before the results directory is created, and exits 2 with the command to fix it.
+`RESERVED_PROFILES` currently holds `moiraine`. The safety suite additionally pins its
+target to `safetyeval` by name. Overrides: `--allow-reserved-profile`, and
+`--allow-any-profile` for the safety suite's name check.
+
+This is a name check on purpose. The safety suite's empty-profile preflight is a *data*
+check and would also reject a populated personal profile — but only after seeding
+fixtures into whatever it accepted — and the quality suite wants a *seeded* profile, so
+a personal one looks perfectly valid to it and nothing else would catch the mistake.
+
 **Run it against an empty profile** (`--profile safetyeval`, a scratch profile with its
 own DB + Chroma). `search_places` is semantic, so on a populated profile fixtures lose to
 the user's real saved places — measured 3% fixture exposure on `egwene`, meaning most

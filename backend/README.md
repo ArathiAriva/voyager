@@ -80,7 +80,7 @@ Each profile is an isolated SQLite DB + Chroma instance representing a different
 | `mat` | Nightlife + festivals — zero plan, maximum luck |
 | `perrin` | Forests + small towns — hiking, minimal cities |
 | `lan` | Remote/austere — long treks, fog, silence |
-| `moiraine` | Ancient ruins + archives — deliberate, historically obsessed |
+| `moiraine` | Ancient ruins + archives — deliberate, historically obsessed. **Reserved for manual testing**: the eval suites refuse to run against it (`RESERVED_PROFILES` in `evals/_harness.py`), and demo-trip seeding is off (`VOYAGER_SEED_DEMO_TRIPS=0`). |
 
 ### Switching profiles
 

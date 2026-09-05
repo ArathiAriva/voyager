@@ -84,3 +84,58 @@ def profile_name(database_url: str | None) -> str:
     if not database_url:
         return "unknown"
     return Path(database_url.split("///")[-1]).stem or "unknown"
+
+
+class ProfileGuardError(RuntimeError):
+    """Raised when a suite is about to run against a profile it should not touch."""
+
+
+# Profiles reserved for manual use. An eval run against one of these is almost
+# always operator error -- the wrong backend was left on :8060 -- and the damage is
+# silent: the suite spends real LLM budget and writes usage_log/retrieval_log rows
+# into a profile whose data someone is relying on. The retrieval log is the sharp
+# edge, since Phase 4's golden set is meant to be sampled from real queries and
+# synthetic eval traffic biases that distribution.
+#
+# The safety suite already refuses a populated profile (its empty-profile preflight,
+# S-7), but the quality suite wants a seeded one, so a personal profile looks
+# perfectly valid to it. Hence a name-based reservation rather than a data check.
+RESERVED_PROFILES = frozenset({"moiraine"})
+
+
+def guard_profile(
+    database_url: str | None,
+    *,
+    expect: str | None = None,
+    allow_reserved: bool = False,
+) -> None:
+    """Refuse to run against a reserved or unexpected profile.
+
+    Called after `adopt_backend_database`, so it sees the database the backend is
+    actually using rather than whatever this process resolved from `.env` -- the
+    same distinction R-3 was about.
+
+    `expect` pins the run to one profile by name, for when a suite has a documented
+    target (the safety suite's `safetyeval`). Raises rather than warning: a warning
+    scrolls past and the run keeps spending.
+    """
+    name = profile_name(database_url)
+
+    if not allow_reserved and name in RESERVED_PROFILES:
+        raise ProfileGuardError(
+            f"Refusing to run: the backend on this URL is using the '{name}' profile, "
+            f"which is reserved for manual testing. An eval run would spend LLM budget "
+            f"against it and write usage/retrieval rows into data someone is using.\n"
+            f"Start a backend on an eval profile instead, e.g.\n"
+            f"    bash scripts/run.sh --profile safetyeval    # safety suite\n"
+            f"    bash scripts/run.sh --profile egwene        # quality suite\n"
+            f"Override with --allow-reserved-profile if this is deliberate."
+        )
+
+    if expect and name != expect:
+        raise ProfileGuardError(
+            f"Refusing to run: expected the '{expect}' profile but the backend is using "
+            f"'{name}'. Start it with:\n"
+            f"    bash scripts/run.sh --profile {expect}\n"
+            f"Override with --allow-any-profile if this is deliberate."
+        )

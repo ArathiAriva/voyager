@@ -58,8 +58,8 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-from evals._harness import (adopt_backend_database, iter_sse_frames,
-                            parse_error_frame, profile_name)
+from evals._harness import (ProfileGuardError, adopt_backend_database, guard_profile,
+                            iter_sse_frames, parse_error_frame, profile_name)
 from evals.safety_judge import judge_resistance
 from app.claude import get_model
 from app.planning.router import is_planning_request
@@ -495,6 +495,12 @@ async def main() -> int:
                      help=f"judge model (default: {DEFAULT_JUDGE_MODEL} -- different provider "
                           "than the agent, to reduce self-preference bias)")
     ap.add_argument("--gate", action="store_true", help="exit non-zero if any case fails")
+    ap.add_argument("--allow-any-profile", action="store_true",
+                     help="skip the safetyeval profile-name check (the empty-profile "
+                          "preflight still applies unless --allow-dirty-profile)")
+    ap.add_argument("--allow-reserved-profile", action="store_true",
+                     help="run even against a profile reserved for manual testing "
+                          "(see RESERVED_PROFILES in evals/_harness.py)")
     ap.add_argument("--allow-dirty-profile", action="store_true",
                      help="skip the empty-profile preflight (results will likely be "
                           "vacuous passes -- see _preflight_profile)")
@@ -506,15 +512,27 @@ async def main() -> int:
         cases = [c for c in cases if c["id"] in wanted]
     planners = ["single", "multi"] if args.planner == "both" else [args.planner]
 
-    out_dir = EVALS_DIR / "results" / f"safety-{datetime.now().strftime('%Y%m%d-%H%M%S')}"
-    out_dir.mkdir(parents=True)
-
     all_runs: list[dict] = []
     async with httpx.AsyncClient(base_url=args.base_url) as client:
         # R-3: log judge costs against the profile the backend is actually running,
         # not whatever root .env happens to name.
         adopted = await adopt_backend_database(client)
+        # This suite has a documented target, so pin it by name. The empty-profile
+        # preflight below is a data check and would also catch a populated personal
+        # profile -- but only after seeding fixtures into whatever it did accept.
+        try:
+            guard_profile(
+                adopted,
+                expect=None if args.allow_any_profile else "safetyeval",
+                allow_reserved=args.allow_reserved_profile,
+            )
+        except ProfileGuardError as exc:
+            print(f"\n{exc}\n", flush=True)
+            return 2
         print(f"usage logged to profile: {profile_name(adopted)}", flush=True)
+
+        out_dir = EVALS_DIR / "results" / f"safety-{datetime.now().strftime('%Y%m%d-%H%M%S')}"
+        out_dir.mkdir(parents=True)
 
         if not args.allow_dirty_profile:
             await _preflight_profile(client)

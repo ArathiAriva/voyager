@@ -38,8 +38,8 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-from evals._harness import (adopt_backend_database, iter_sse_frames,
-                            parse_error_frame, profile_name)
+from evals._harness import (ProfileGuardError, adopt_backend_database, guard_profile,
+                            iter_sse_frames, parse_error_frame, profile_name)
 from evals.judge import DIMENSIONS, judge_reply
 from app.claude import get_model
 
@@ -197,6 +197,9 @@ def _write_report(out_dir: Path, by_planner: dict[str, list[dict]]) -> None:
 async def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--planner", choices=["single", "multi", "both"], default="both")
+    ap.add_argument("--allow-reserved-profile", action="store_true",
+                    help="run even if the backend is on a profile reserved for manual "
+                         "testing (see RESERVED_PROFILES in evals/_harness.py)")
     ap.add_argument("--cases", help="comma-separated case ids (default: all)")
     ap.add_argument("--base-url", default=DEFAULT_BASE_URL)
     ap.add_argument("--judge-model",
@@ -211,15 +214,23 @@ async def main() -> None:
         golden = [c for c in golden if c["id"] in wanted]
     planners = ["single", "multi"] if args.planner == "both" else [args.planner]
 
-    out_dir = EVALS_DIR / "results" / datetime.now().strftime("%Y%m%d-%H%M%S")
-    out_dir.mkdir(parents=True)
-
     by_planner: dict[str, list[dict]] = {}
     async with httpx.AsyncClient(base_url=args.base_url) as client:
         # R-3: log judge costs against the profile the backend is actually running,
         # not whatever root .env happens to name.
         adopted = await adopt_backend_database(client)
+        # Checked before the results dir is created and before any LLM spend: this
+        # suite wants a *seeded* profile, so a personal one looks valid to it and
+        # nothing else would catch the mistake.
+        try:
+            guard_profile(adopted, allow_reserved=args.allow_reserved_profile)
+        except ProfileGuardError as exc:
+            print(f"\n{exc}\n", flush=True)
+            return 2
         print(f"usage logged to profile: {profile_name(adopted)}", flush=True)
+
+        out_dir = EVALS_DIR / "results" / datetime.now().strftime("%Y%m%d-%H%M%S")
+        out_dir.mkdir(parents=True)
 
         for planner in planners:
             results = []
@@ -253,4 +264,4 @@ async def main() -> None:
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    raise SystemExit(asyncio.run(main()) or 0)

@@ -881,3 +881,57 @@ def test_dedup_failure_never_loses_a_write(monkeypatch):
 
     mem.store_preferences(["prefers boutique hotels over large chains"])
     assert collection.count() == 2
+
+
+# ── Eval profile guard ──────────────────────────────────────────────────────
+
+def test_reserved_profile_is_refused():
+    """The evals adopt whatever profile the backend on :8060 is using, so leaving a
+    personal backend running is enough to point a suite at it. The safety suite's
+    empty-profile preflight would catch a populated one, but only after seeding
+    fixtures; the quality suite wants a seeded profile, so nothing caught it."""
+    import pytest as _pytest
+    from evals._harness import ProfileGuardError, guard_profile
+
+    with _pytest.raises(ProfileGuardError) as exc:
+        guard_profile("sqlite+aiosqlite:///./data/moiraine.db")
+
+    message = str(exc.value)
+    assert "moiraine" in message
+    assert "reserved for manual testing" in message
+    # The error has to say how to proceed, or it is just an obstacle.
+    assert "scripts/run.sh --profile" in message
+
+
+def test_non_reserved_profiles_run_normally():
+    from evals._harness import guard_profile
+
+    guard_profile("sqlite+aiosqlite:///./data/egwene.db")
+    guard_profile("sqlite+aiosqlite:///./data/safetyeval.db")
+
+
+def test_reserved_profile_can_be_overridden_deliberately():
+    from evals._harness import guard_profile
+
+    guard_profile("sqlite+aiosqlite:///./data/moiraine.db", allow_reserved=True)
+
+
+def test_expected_profile_mismatch_is_refused():
+    """The safety suite has a documented target, so it pins the name rather than
+    relying on a data check that only fires after fixtures are written."""
+    import pytest as _pytest
+    from evals._harness import ProfileGuardError, guard_profile
+
+    with _pytest.raises(ProfileGuardError) as exc:
+        guard_profile("sqlite+aiosqlite:///./data/egwene.db", expect="safetyeval")
+    assert "expected the 'safetyeval' profile" in str(exc.value)
+
+    guard_profile("sqlite+aiosqlite:///./data/safetyeval.db", expect="safetyeval")
+
+
+def test_unknown_database_url_is_allowed():
+    """An older backend does not report `database_url`. Blocking on that would break
+    a working setup for a check that cannot conclude anything."""
+    from evals._harness import guard_profile
+
+    guard_profile(None)
