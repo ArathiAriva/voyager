@@ -1,4 +1,5 @@
 """Tests for journal entry endpoints."""
+import asyncio
 import pytest
 from unittest.mock import patch, AsyncMock
 from httpx import AsyncClient
@@ -100,3 +101,73 @@ async def test_trip_delete_cascades_journal_entries(client: AsyncClient):
     # Trip is gone, listing journal should 404
     resp = await client.get(f"/api/trips/{trip_id}/journal")
     assert resp.status_code == 404
+
+
+# ── Cost attribution (B-5) ──────────────────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_journal_extraction_is_attributed_to_memory_extraction():
+    """B-5: _extract_journal_memory made an LLM call without setting a usage
+    context, so its cost was attributed to whatever context happened to be current
+    when the task was spawned. That made `memory_extraction` an undercount of real
+    extraction spend -- the number M-6's "not worth fixing" call rests on."""
+    from unittest.mock import MagicMock
+    from app.routers.journal import _extract_journal_memory
+    from app.usage import usage_context
+
+    seen: list[str] = []
+
+    async def fake_create(*args, **kwargs):
+        # Captured at call time, which is what the usage recorder reads.
+        seen.append(usage_context.get())
+        message = MagicMock()
+        message.content = '{"episode": "A day in Petra.", "preferences": []}'
+        choice = MagicMock()
+        choice.message = message
+        response = MagicMock()
+        response.choices = [choice]
+        return response
+
+    client = MagicMock()
+    client.chat.completions.create = fake_create
+
+    # Spawn under a *different* context, as a real request would.
+    usage_context.set("chat")
+    with patch("app.routers.journal.get_client", return_value=client), \
+         patch("app.routers.journal.mem.store_episode"), \
+         patch("app.routers.journal.mem.store_preferences"):
+        await _extract_journal_memory("entry-1", "Petra, Jordan", "Walked the Siq at dawn.")
+
+    assert seen == ["memory_extraction"]
+
+
+@pytest.mark.asyncio
+async def test_journal_extraction_does_not_leak_its_context_to_the_caller():
+    """ContextVar.set inside a task must not alter the spawning context. If it did,
+    every request that created a journal entry would log its later LLM calls as
+    memory_extraction."""
+    from unittest.mock import MagicMock
+    from app.routers.journal import _extract_journal_memory
+    from app.usage import usage_context
+
+    async def fake_create(*args, **kwargs):
+        message = MagicMock()
+        message.content = '{"episode": "x", "preferences": []}'
+        choice = MagicMock()
+        choice.message = message
+        response = MagicMock()
+        response.choices = [choice]
+        return response
+
+    client = MagicMock()
+    client.chat.completions.create = fake_create
+
+    usage_context.set("chat")
+    with patch("app.routers.journal.get_client", return_value=client), \
+         patch("app.routers.journal.mem.store_episode"), \
+         patch("app.routers.journal.mem.store_preferences"):
+        await asyncio.create_task(
+            _extract_journal_memory("entry-2", "Petra, Jordan", "Another entry.")
+        )
+
+    assert usage_context.get() == "chat"

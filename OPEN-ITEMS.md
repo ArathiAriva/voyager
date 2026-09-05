@@ -298,13 +298,28 @@ and the three conversation deletes. Each dialog names what else disappears (a tr
 its journal entries and saved places with it) rather than asking a generic "are you sure".
 Still no undo; confirmation is the only guard.
 
-### B-5 — Journal extraction leaks cost attribution
+### ~~B-5 — Journal extraction leaks cost attribution~~ · **fixed 2026-09-04**
 
-`conversations.py:86` sets `usage_context.set("memory_extraction")`;
-`_extract_journal_memory` (`journal.py:46-73`) sets no usage context, so its cost
-is attributed to whatever context was last set.
+`conversations.py` set `usage_context.set("memory_extraction")` before its
+extraction call; `_extract_journal_memory` set no usage context, so its cost was
+attributed to whatever context was current when the task was spawned — the
+journal router's request context, or `unspecified`. `egwene` carries 13
+`unspecified` rows on the extraction model, all from one day, consistent with
+this.
 
-**Severity:** low — but this project's whole point includes cost accounting.
+**Fixed** by setting the context as the first statement in the task, matching
+the `conversations.py` pattern. A task receives a *copy* of the spawning
+context, so the set is confined to that task and does not leak back to the
+request — there is a regression test for each direction, and the attribution
+test was confirmed to fail with the fix reverted.
+
+**This corrected a number M-6 rests on.** `memory_extraction` was an undercount
+of real extraction spend, because journal extraction was excluded from it. The
+"2% of total LLM spend" figure that justified deferring M-6 was measured under
+the bug and is therefore low by an unmeasured amount. Re-measure before treating
+M-6's deferral as settled.
+
+**Severity:** was low — but this project's whole point includes cost accounting.
 
 ---
 
@@ -495,6 +510,12 @@ conversations in this profile are median **2** messages, max **4** — so almost
 nothing is re-extracted. Across 104 conversations the redundancy is ~1% of turns
 sent. Memory extraction is **2% of total LLM spend** ($0.077 over 96 calls), so
 the recoverable waste is a fraction of a cent.
+
+⚠️ **That 2% was measured under B-5** (fixed 2026-09-04), which excluded journal
+extraction from the `memory_extraction` context entirely — so it is an
+undercount by an unmeasured amount. The conclusion probably survives (journal
+entries are far rarer than chat turns), but re-measure from `usage_log` before
+relying on it.
 
 Both obvious fixes cost something real in exchange: extracting only the newest
 exchange loses cross-turn inference (a preference stated in turn 1 and confirmed

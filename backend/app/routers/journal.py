@@ -11,6 +11,7 @@ from app.db import get_session
 from app.models.orm import TripORM, JournalEntryORM
 from app.models.trip import JournalEntry, JournalEntryCreate, JournalEntryUpdate
 from app.claude import get_client, get_model
+from app.usage import usage_context
 from app import memory as mem
 
 logger = logging.getLogger("voyager.journal")
@@ -61,6 +62,13 @@ def _spawn_extraction(entry_id: str, trip_destination: str, body: str) -> None:
 
 async def _extract_journal_memory(entry_id: str, trip_destination: str, body: str) -> None:
     try:
+        # B-5: without this the call inherits whatever context was current when the
+        # task was spawned -- the journal router's request context, or "unspecified"
+        # -- so journal-extraction spend was attributed to something else. That made
+        # `memory_extraction` an undercount of real extraction cost, which is the
+        # number M-6 was decided on. A task gets a copy of the spawning context, so
+        # setting it here affects only this task.
+        usage_context.set("memory_extraction")
         client = get_client()
         response = await client.chat.completions.create(
             model=get_model(),
