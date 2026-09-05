@@ -28,6 +28,26 @@ const TABS: { value: Tab; label: string }[] = [
   { value: "content", label: "Connected" },
 ];
 
+/**
+ * Category colour for a saved place. Categories carry real meaning -- you scan a
+ * board of places looking for "where do I eat" -- so the badge is colour-coded
+ * rather than uniformly grey. Grey on `bg.surface` was also nearly invisible in
+ * light mode: `bg.subtle` (#f1f3f5) against the card's #f8f9fa is a 3-point
+ * difference.
+ */
+const CATEGORY_PALETTE: Record<string, string> = {
+  restaurant: "orange",
+  cafe: "yellow",
+  bar: "purple",
+  "street food": "orange",
+  hotel: "blue",
+  neighbourhood: "teal",
+  attraction: "green",
+  shop: "pink",
+  beach: "cyan",
+  other: "gray",
+};
+
 /** Count pill shown on each tab. Muted normally, accent-tinted when its tab is active. */
 function TabCount({ n, active }: { n: number; active: boolean }) {
   return (
@@ -721,9 +741,11 @@ export default function TripDetailPage() {
                       style={{ width: "100%", height: "120px", objectFit: "cover" }}
                     />
                   ) : (
-                    <Flex h="120px" align="center" justify="center" bg="bg.subtle" direction="column" gap={1.5}>
-                      <Box color="text.muted"><PinIcon size={20} /></Box>
-                      <Text fontSize="xs" color="text.muted" textTransform="capitalize">{place.category}</Text>
+                    // No image to show, so this is a thin marker rather than a
+                    // 120px empty box. The category name lives in the badge below,
+                    // so repeating it here would be redundant.
+                    <Flex h="8" align="center" justify="center" bg="bg.subtle" borderBottom="1px solid" borderColor="border.default">
+                      <Box color="text.muted"><PinIcon size={14} /></Box>
                     </Flex>
                   )}
                   <Box p={3}>
@@ -735,7 +757,17 @@ export default function TripDetailPage() {
                         <Spinner size="xs" color="blue.400" flexShrink={0} />
                       )}
                     </HStack>
-                    <Badge size="xs" variant="subtle" colorPalette="gray" mb={1}>{place.category}</Badge>
+                    <Badge
+                      size="xs"
+                      variant="solid"
+                      colorPalette={CATEGORY_PALETTE[place.category] ?? "gray"}
+                      borderRadius="full"
+                      px={2}
+                      mb={1}
+                      textTransform="capitalize"
+                    >
+                      {place.category}
+                    </Badge>
                     {place.address && (
                       <Text fontSize="xs" color="text.secondary" lineClamp={1}>{place.address}</Text>
                     )}
@@ -749,8 +781,17 @@ export default function TripDetailPage() {
                   </Box>
                   <HStack justify="space-between" px={3} pb={3}>
                     {place.url ? (
-                      <Button size="xs" variant="ghost" color="blue.400" px={0} onClick={(e) => { e.stopPropagation(); window.open(place.url!, "_blank"); }}>
-                        Open ↗
+                      <Button
+                        size="xs"
+                        variant="ghost"
+                        color="accent.active"
+                        px={2}
+                        gap={1.5}
+                        _hover={{ bg: "accent.activeBg" }}
+                        onClick={(e) => { e.stopPropagation(); window.open(place.url!, "_blank"); }}
+                      >
+                        <LinkIcon size={12} />
+                        Open
                       </Button>
                     ) : <Box />}
                     <Button
@@ -873,11 +914,14 @@ export default function TripDetailPage() {
                   <Button
                     size="xs"
                     variant="ghost"
-                    color="blue.400"
-                    px={0}
+                    color="accent.active"
+                    px={2}
+                    gap={1.5}
+                    _hover={{ bg: "accent.activeBg" }}
                     onClick={() => window.open(item.url, "_blank")}
                   >
-                    Open ↗
+                    <LinkIcon size={12} />
+                    Open
                   </Button>
                   <Button
                     size="xs"
@@ -928,7 +972,16 @@ export default function TripDetailPage() {
                   <Button size="xs" variant="ghost" color="text.dim" onClick={() => setSelectedPlace(null)}><CloseIcon /></Button>
                 </HStack>
                 <HStack gap={2} mb={3}>
-                  <Badge size="sm" variant="subtle" colorPalette="blue">{selectedPlace.category}</Badge>
+                  <Badge
+                    size="sm"
+                    variant="solid"
+                    colorPalette={CATEGORY_PALETTE[selectedPlace.category] ?? "gray"}
+                    borderRadius="full"
+                    px={2.5}
+                    textTransform="capitalize"
+                  >
+                    {selectedPlace.category}
+                  </Badge>
                   {selectedPlace.enrichment_status === "pending" && (
                     <HStack gap={1}><Spinner size="xs" color="blue.400" /><Text fontSize="xs" color="text.dim">Fetching details...</Text></HStack>
                   )}
@@ -948,7 +1001,8 @@ export default function TripDetailPage() {
                 <HStack justify="space-between" pt={1}>
                   {selectedPlace.url ? (
                     <Button size="sm" colorPalette="blue" variant="outline" onClick={() => window.open(selectedPlace.url!, "_blank")}>
-                      Open link ↗
+                      <LinkIcon size={13} />
+                      Open link
                     </Button>
                   ) : <Box />}
                   <Button
