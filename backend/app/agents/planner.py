@@ -81,7 +81,11 @@ Return JSON only — no prose, no code fences.
     "dietary": [],
     "must_include": []
   }
-}"""
+}
+
+If the profile contains `current_trip`, the user is ON that trip right now. Use its
+destination unless they clearly name another, and set `duration_days` to the days
+that REMAIN — not the whole trip. Never plan a day they have already spent."""
 
 ASSEMBLE_PROMPT = """You are Voyager, a warm and knowledgeable travel companion.
 The multi-agent planning system has produced a trip itinerary. Write a friendly,

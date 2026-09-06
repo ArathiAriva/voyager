@@ -361,3 +361,73 @@ async def test_non_iso_itinerary_dates_would_break_live_resolution(session):
     still fall back to the `dates` string for the window."""
     assert resolve_trip_window(itinerary=[{"day": 1, "date": "September 4, 2026"}]) is None
     assert resolve_trip_window(itinerary=[{"day": 1, "date": "2026-09-04"}]) is not None
+
+
+# ── Stage 3: the planner brief carries the live trip ────────────────────────
+
+@pytest.mark.asyncio
+async def test_brief_context_carries_the_live_trip(session):
+    """A mid-trip replan must start from where the user is. Without this the graph
+    plans the remaining days as though the trip had not begun -- suggesting a day 1
+    arrival on day 3."""
+    import uuid as _uuid
+    from unittest.mock import patch as _patch
+    from app.planning import graph as g
+
+    captured: dict = {}
+
+    async def fake_brief(message, ctx, model=None):
+        captured.update(ctx)
+        return {"destination": "Halifax", "duration_days": 2}
+
+    async def fake_classify(message, model=None):
+        return {"intent": "full_plan", "revision_domains": [], "day_range": None,
+                "instruction": "", "missing": []}
+
+    start = date.today() - timedelta(days=2)  # day 3 of 4
+    session.add(TripORM(id=str(_uuid.uuid4()), destination="Halifax", dates="x",
+                        status="upcoming", emoji="🌊", itinerary=_itinerary(start, 4)))
+    await session.commit()
+
+    with _patch.object(g.planner, "build_brief", fake_brief), \
+         _patch.object(g.planner, "classify_intent", fake_classify):
+        await g.node_classify_intent(
+            {"user_message": "replan the rest", "user_preferences": [], "past_trips": [],
+             "saved_places": [], "trip_id": None, "revision_count": 0},
+            {"configurable": {"session": session}},
+        )
+
+    current = captured.get("current_trip")
+    assert current is not None, "the brief must know the trip is underway"
+    assert current["day"] == 3 and current["total_days"] == 4
+    assert current["remaining_days"] == ["Day 4"]
+    assert "do not re-plan days already spent" in current["note"]
+
+
+@pytest.mark.asyncio
+async def test_brief_context_omits_current_trip_when_nothing_is_live(session):
+    """Most planning happens before a trip. The key must be absent rather than
+    present-and-empty, so the prompt's "if the profile contains current_trip"
+    branch does not fire on a null."""
+    from unittest.mock import patch as _patch
+    from app.planning import graph as g
+
+    captured: dict = {}
+
+    async def fake_brief(message, ctx, model=None):
+        captured.update(ctx)
+        return {"destination": "Halifax", "duration_days": 4}
+
+    async def fake_classify(message, model=None):
+        return {"intent": "full_plan", "revision_domains": [], "day_range": None,
+                "instruction": "", "missing": []}
+
+    with _patch.object(g.planner, "build_brief", fake_brief), \
+         _patch.object(g.planner, "classify_intent", fake_classify):
+        await g.node_classify_intent(
+            {"user_message": "plan 4 days in Halifax", "user_preferences": [],
+             "past_trips": [], "saved_places": [], "trip_id": None, "revision_count": 0},
+            {"configurable": {"session": session}},
+        )
+
+    assert "current_trip" not in captured

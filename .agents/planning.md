@@ -61,3 +61,4 @@ Per-agent model selection is supported (optional `model=` threaded through agent
 - Itinerary persisted to the trip's JSON `itinerary` column (`ItineraryDay` includes `area_focus` and `accommodation`).
 - All LLM-recommended places are auto-saved to Saved Places with Google Maps links after planning completes.
 - Each node emits a step label surfaced live in the chat UI via SSE.
+- **The brief carries `current_trip` when a trip is underway** (`find_live_trip`, Live Trip Mode Stage 3). A mid-trip replan must start from where the user actually is — without it the graph plans the remaining days as though the trip had not begun, suggesting a day 1 arrival on day 3. `BRIEF_PROMPT` instructs the model to use its destination and set `duration_days` to the days that *remain*. The key is absent rather than null when nothing is live.

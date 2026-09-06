@@ -29,6 +29,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.planning.state import PlanningState, RevisionScope
 from app.agents import planner, activities, food, accommodation, logistics, optimizer, critic
 from app.models.orm import TripORM
+from app.tools import find_live_trip
 from app.utils import dest_matches as _dest_matches
 from app.tracing import node_context
 from app.planning import trace as planning_trace
@@ -132,6 +133,23 @@ async def node_classify_intent(state: PlanningState, config: RunnableConfig) -> 
         "past_trips": state.get("past_trips", []),
         "saved_places": state.get("saved_places", []),
     }
+
+    # A mid-trip replan starts from where the user actually is, not from scratch.
+    # Without this the graph would plan the remaining days as though the trip had
+    # not begun -- suggesting a day 1 arrival on day 3. Live Trip Mode Stage 3;
+    # see docs/live-trip-mode.md.
+    live = await find_live_trip(session)
+    if live:
+        ctx["current_trip"] = {
+            "destination": live["destination"],
+            "day": live["day_number"],
+            "total_days": live["total_days"],
+            "today": live["date"],
+            "today_plan": (live.get("today") or {}).get("title"),
+            "remaining_days": [d.get("title") for d in live.get("remaining_days", [])],
+            "note": "The user is ON this trip right now. Plan only the days that "
+                    "remain, and do not re-plan days already spent.",
+        }
     node_context.set("build_brief")
     brief = await planner.build_brief(state["user_message"], ctx)
     updates["brief"] = brief

@@ -1,6 +1,6 @@
 # Live Trip Mode — design
 
-**Status:** proposed, partially built (Stage 1 implemented 2026-09-05).
+**Status:** Stages 1, 3 (planner half) and 4 built 2026-09-05. Stage 2 and journal chat-capture not built.
 **Phase:** not in the current phase list. Filed as a Phase 5 candidate for the
 user to weigh against retrieval observability and memory maturity.
 
@@ -128,7 +128,7 @@ Each stage is independently useful and independently revertible.
 |---|---|---|---|
 | **1** | `resolve_trip_window` + `is_live` + `get_current_trip` tool + system-prompt injection | none | **built 2026-09-05** |
 | **2** | `start_date`/`end_date` columns, backfilled from itineraries; date picker in the trip form | Alembic | not built |
-| **3** | Planner brief carries the live trip; journal entries default to today's trip and date | none | not built |
+| **3** | Planner brief carries the live trip; journal entries default to today's trip and date | none | **planner half built 2026-09-05**; journal entries already defaulted (trip from the URL, date to today), so only chat capture remains |
 | **4** | UI: "Day 2 of 4" badge on the trip card and detail page | none | **built 2026-09-05** |
 
 Stage 4's badge was pulled forward, because Stage 1 created an inconsistency by
