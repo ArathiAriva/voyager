@@ -33,7 +33,7 @@ Each phase is a capability that deepens over time rather than a box that closes.
 | **Live Trip Mode** | Agent knows a trip is underway: which day, today's plan | ✅ Built (Stages 1, 3, 4) — Stage 2 columns unbuilt |
 | **Trip-scoped chats** | Conversations carry a `trip_id`; picker on new chat | ✅ Built (all 4 stages) |
 | **Visited places & anecdotes** | Mark a saved place as visited; store the user's own note about it | ✅ Built (Stages 1–3) — chat capture unbuilt |
-| **Conversational onboarding** | New user tells the agent about a past trip; extraction does the rest | 🕐 Candidate — design only, unscheduled |
+| **Conditional preferences + onboarding** | Preferences carry *when* they hold; onboarding asks about contrasting trips | 🕐 Candidate — design only, unscheduled |
 | **6. Production** | Deployment, auth, Postgres/pgvector, rate limits, quotas | Deferred |
 
 **Deviation worth naming (2026-09-05):** Live Trip Mode, trip-scoped chats, and
@@ -132,21 +132,26 @@ before writing or a client-side path that never routes the text through the mode
 Open question 1 is still open and still the one to weigh: "went to and wrote warmly
 about" is the strongest preference signal available, and the extractor cannot see it.
 
-**Conversational onboarding** — candidate, not scheduled. Design:
+**Conditional preferences + onboarding** — candidate, not scheduled. Design:
 [docs/conversational-onboarding.md](docs/conversational-onboarding.md).
 
-There is **no onboarding at all** today — a new profile meets four empty states and
-an agent that knows nothing. The obvious fix is a setup survey; the doc argues
-against one *for this app specifically*: preferences here are free-text traits that
-`search_memory` retrieves against, and a dropdown writes an enum that nothing
-downstream reads. Asking about one concrete past trip yields more, and better, than
-asking someone to rate their own travel style.
+Started as onboarding (there is none today) and turned into something structural.
+**Preferences are stored as unconditional facts about a person, and many of them are
+not.** `travels solo` sits in memory beside `does not drink alcohol` as though both
+are always true — but a family trip would *contradict* it, and M-4 would retire one.
+Both are true. A trip with friends is a different trip from one with family or one
+alone, and the model cannot say so.
 
-**The risk is extraction quality, not UX.** Onboarding extraction is uncorrected,
-front-loaded, and drawn from thin evidence — one splurge anniversary trip could
-yield "prefers luxury hotels" forever. The confirm-and-correct step (§4.3) is the
-safety mechanism, not a nicety, which is why the doc marks it non-optional relative
-to Stage 1.
+**This subsumes M-5.** Destination scoping is one condition among several, and
+probably not the strongest. It also corrects a conclusion nearly reached earlier —
+that M-5 could be deferred because moiraine's 9 preferences contain nothing
+destination-bound. Those 9 rows describe *one travel mode*, so the absence of
+conflict was thin data, not evidence.
+
+The doc maps what changes: storage is additive (Chroma is schemaless), extraction
+changes shape in two call sites, **dedup and reconciliation must become
+condition-aware or M-4 turns destructive**, and matching needs a condition on the
+trip — the one Alembic migration required.
 
 **RAG — journal + saved places**
 
