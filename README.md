@@ -5,8 +5,13 @@ An AI-native travel companion that remembers your trips, helps you plan, and giv
 ## Status
 
 Core app is built: chat loop, multi-agent planner, memory, journal + places RAG, evals,
-tracing, cost accounting. Current focus is **agent safety evals** (indirect prompt
-injection, both planner architectures).
+tracing, cost accounting. Since then: retrieval-quality instrumentation and a Retrieval
+page, memory maturity (provenance → dedup → contradiction reconciliation, with
+superseded preferences retired rather than deleted), Live Trip Mode, trip-scoped chats,
+and visited places with anecdotes.
+
+**Agent safety evals are paused** (2026-09-03), not abandoned — the suite, its results
+and `SAFETY-LEDGER.md` stay in place. Current focus is deploying for real use on a trip.
 
 Roadmap, phase definitions, and scope decisions live in [VISION.md](VISION.md).
 Known bugs and open work live in [OPEN-ITEMS.md](OPEN-ITEMS.md).
@@ -130,6 +135,11 @@ to the single-agent loop rather than failing.
 | `OPENROUTER_MODEL` | No | `anthropic/claude-haiku-4-5` | Any OpenRouter model string |
 | `BRAVE_API_KEY` | No | — | [Brave Search API](https://brave.com/search/api/) key; enables the `web_search` tool |
 | `VOYAGER_PLANNER` | No | `multi` | `single` or `multi` — which architecture handles planning requests (see above) |
+| `VOYAGER_AUTH_TOKEN` | No | — | Shared access token. **Unset means every endpoint is public** — correct locally, wrong on the internet. Startup logs a warning when unset. |
+| `VOYAGER_CORS_ORIGINS` | No | — | Comma-separated extra origins for a deployed frontend; localhost defaults always apply |
+| `VOYAGER_SEED_DEMO_TRIPS` | No | on | `0`/`false`/`no`/`off` stops the three demo trips being seeded into an empty DB |
+| `VOYAGER_MAX_RETRIEVAL_DISTANCE[_<COLLECTION>]` | No | per-collection | Overrides the vector-search distance floor; see `.agents/memory.md` |
+| `VOYAGER_PREFERENCE_DEDUPE_DISTANCE` | No | `0.55` | L2 distance under which an incoming preference supersedes an existing one |
 
 ---
 

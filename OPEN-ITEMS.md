@@ -23,13 +23,22 @@ Severity is about consequence if left alone, not effort to fix.
 > S-13 is *not* parked — it calibrates the **quality** judge, which gates per-node model
 > decisions and belongs to the product track.
 
-1. **Product flow** — the chat→trip→itinerary path is the current focus. B-9, B-10 and
-   B-11, B-7 and B-3 are all fixed as of 2026-09-03, as are the R-1..R-3 refactors.
-   Backend suite is green (73 passed). Next: **S-13** (calibrate the quality judge) or
-   the retrieval instrumentation. **M-2, M-9 and M-10 landed 2026-09-04** (metadata
-   provenance, per-collection distance floors, facet-based preference retrieval).
-2. **S-13** — calibrate the quality judge. Gates any per-node model decision, since that
-   verdict would rest entirely on an unmeasured judge. *(~15 hand labels)*
+1. **Deploying for a real trip (2026-09-06).** A Halifax trip on **Sept 18–21** is the
+   driver, which pulls some Month 6 work forward. Done: the shared-token lock
+   (`app/auth.py`). Remaining, in order: **mobile layout** (the sidebar defaults to
+   288px of a 390px screen — two small fixes, not the half-day first estimated),
+   **Dockerfile** with the 166 MB Chroma model baked in, **persistent volume** (SQLite
+   and Chroma are files; a redeploy without one wipes everything), and Cloudflare
+   Access in front.
+
+   **Back up `backend/data/` and `backend/chroma_*/` first.** Both are gitignored and
+   untracked, so the Halifax trip exists only on the dev machine.
+
+   Backend suite: **253 passed** (was 73 when this list was written).
+2. **S-13 — calibrate the quality judge.** Scaffolding built 2026-09-05
+   (`quality_labels_template.py` → hand-score → `quality_judge_calibrate.py`).
+   **Blocked on a corpus, not effort:** `evals/results/` holds one usable quality run,
+   so the suite must be run over the golden set before there is anything to label.
 3. **Retrieval instrumentation** — spec steps 1–3 **done 2026-09-03**: `retrieval_log`
    (all four collections), IDs/distances from `search_memory`, and
    `GET /api/retrieval/summary` + `/recent`. Remaining: **step 4**, the labelled golden
@@ -40,9 +49,10 @@ Severity is about consequence if left alone, not effort to fix.
    distance floors so a bad number reads as bad without recalling each metric's range.
    See [docs/retrieval-quality-spec.md](docs/retrieval-quality-spec.md).
 
-   **The instrumentation has almost no data to work with: 3 rows total, all in
-   `moiraine`, from a single planning run** (checked 2026-09-04 across all 7
-   profiles). Labelling a golden set now means guessing at the query distribution.
+   **The instrumentation has 30 rows** (checked 2026-09-06, all in `moiraine`) — but
+   almost all are from *my own testing*, not real usage, so the query distribution is
+   still synthetic. Labelling against it would encode test queries as the golden set.
+   Real traffic is what unblocks this, which the Halifax trip should produce.
    Exercising the chat→trip→itinerary flow populates `retrieval_log` first, and the
    golden set then writes itself from real queries. Those 3 rows are also what
    motivated M-9 and M-10 — one real logged query was enough to expose both bugs,
@@ -86,6 +96,42 @@ default). Applied to `egwene` — 12/12 entries now have an episode and surface 
 `search_memory`.
 
 **B-4 is the same defect class** and is still open for `conversations.py:370`.
+
+### D-1 — Profile data exists only on the dev machine · **act before deploying**
+
+`backend/data/` and `backend/chroma_*/` are gitignored and untracked, so every trip,
+itinerary, saved place, journal entry and preference lives on one laptop — whose
+screen is dead. The Halifax trip being deployed *for* is in there.
+
+Backing it up costs nothing and is independent of deployment. ~11 MB of SQLite plus
+~6.6 MB of Chroma per active profile.
+
+### D-2 — Deployment needs a persistent volume, or a redeploy wipes everything
+
+SQLite and Chroma are **files**. Most PaaS filesystems are ephemeral, so without an
+attached volume the first redeploy silently destroys all data. This is the highest-risk
+item in deploying, and its failure mode is total.
+
+Related: the Chroma embedding model is **166 MB** cached at `~/.cache/chroma/`. On a
+fresh container it downloads on first use — slow, and repeated on every deploy if the
+filesystem is ephemeral. It wants baking into the image.
+
+Also needs fixing for a container: `mcp_client.py` spawns the MCP server from a
+relative `../../mcp-server/server.py`.
+
+### D-3 — Mobile layout has two fixed-width blockers
+
+Verified at a 390px viewport (iPhone 14/15):
+
+- **The sidebar defaults to expanded** — 288px of 390px, leaving 102px of content.
+  Collapsed it is 64px, which leaves 246px usable and everything fits.
+- **The Memories grid has `minmax(300px, 1fr)`**, which overflows 246px.
+
+Both are one-line fixes. An earlier estimate of "half a day, only 2 of 9 pages are
+responsive" was **wrong**: Next injects the viewport meta tag by default, and Chakra's
+`auto-fill` grids adapt without explicit breakpoints. Grepping for `base:` measured
+the wrong thing. The Retrieval and Traces pages do overflow, but they are developer
+views and will not be opened on a phone.
 
 ### B-2 — Journal PATCH doesn't revoke derived preferences · **half fixed 2026-08-23**
 

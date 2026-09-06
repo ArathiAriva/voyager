@@ -16,7 +16,8 @@ frontend/src/
 │   │   └── layout.tsx
 │   ├── layout.tsx        # Root layout (providers, fonts)
 │   └── page.tsx          # Landing / redirect
-├── components/           # providers.tsx, sidebar.tsx, theme-switcher.tsx
+├── components/           # providers, sidebar, theme-switcher, icons,
+│                         # confirm-dialog, trip-scope-picker, unlock-gate
 └── lib/
     ├── api.ts            # ALL backend calls — typed fetch wrappers; never fetch directly in components
     └── theme.ts / theme-context.tsx
@@ -31,6 +32,8 @@ frontend/src/
 - **Theme switching (Chakra v3):** use `.dark`/`.light` class names on `<html>` (not `data-theme`), with `_light`/`_dark` conditions in semanticTokens.
 - Chat pages consume the backend SSE stream: token/step events render live progress (planning-graph node labels appear as steps).
 - `planning/` is the agent-trace viewer: a master/detail pair — a **Runs** list on the left, the selected run's **Timeline** on the right. Both columns carry an explicit heading because they stack below the `md` breakpoint, and without labels the two groups read as one continuous list of cards with nothing signalling that the first group is clickable.
+- **All backend calls go through `authFetch` in `lib/api.ts`**, which attaches the access token and raises `UnauthorizedError` on a 401. There are ~32 call sites; adding a header at each would mean one missed call 401ing in a way that looks like a bug in that feature. `UnlockGate` wraps the `(app)` shell and prompts for the token when a 401 fires — it renders only *after* a rejection, so a local backend without `VOYAGER_AUTH_TOKEN` never shows it.
+- `TripScopePicker` (shared by both chat entry points and the chat header) uses a **three-valued** scope: `undefined` = not chosen, `null` = explicitly unscoped, or a trip id. Collapsing the first two would make a preselected live trip un-deselectable.
 - `retrieval/` is the RAG-health view (Phase 4): per-collection zero rate, best-distance percentiles, saturation, a by-caller zero-rate table, and recent searches with a zero-result filter. Numbers are colour-graded against the per-collection distance floors in `backend/app/memory.py`, since the same distance means different things per collection — 1.5 is healthy for `saved_places` and past the floor for `semantic`.
 
 ## Commands & tests
