@@ -647,6 +647,22 @@ Growth bounding (a cap or TTL) is **not** included and remains open — the row
 count is small enough that it has never been the binding constraint, and the
 duplicate class it would target is now handled at write time.
 
+**Superseded rows are retired, not deleted (2026-09-06).** They carry
+`superseded_at`/`superseded_by`, their replacement carries `supersedes`, and they
+are excluded from retrieval and from dedup. Two reasons: a wrong supersede becomes
+recoverable, and preference *drift* becomes visible — the raw material for showing
+a user how their tastes have changed. `GET /api/memories` returns them separately
+as `retired_preference_rows`; **no UI consumes that yet.**
+
+This matches where the field landed. Bitemporal ledgers with validity windows are
+the standard answer to serving stale values, and the measured problem is real:
+RAG serves superseded values 15–40% of the time when the stale and current forms
+embed alike ([arXiv:2606.26511](https://arxiv.org/abs/2606.26511)). Worth reading
+alongside [CAPTURE](https://arxiv.org/abs/2609.02265), which argues recency and
+provenance rules *cannot* separate genuine drift from a temporary context shift or
+an injected preference — relevant here, since latest-wins is exactly what this
+implements and anecdotes are about to become a trusted retrieval channel.
+
 ### M-5 — Preferences aren't scoped to a trip or destination
 
 `enjoys traditional Portuguese cuisine and fado music` is globally retrievable

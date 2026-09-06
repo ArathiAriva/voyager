@@ -807,7 +807,11 @@ def test_rewording_of_an_existing_preference_is_not_stored_twice():
     store_preferences(["prefers walking and public transit over other transportation"])
     store_preferences(["prefers walking or public transit over driving"])
 
-    assert _semantic().count() == 1
+    # Both rows are kept -- the superseded one is retired, not deleted, so that a
+    # preference changing stays visible afterwards. Only one is *live*.
+    live = [d for d, m in zip(_semantic().get()["documents"], _semantic().get()["metadatas"])
+            if not (m or {}).get("superseded_at")]
+    assert len(live) == 1
 
 
 def test_contradicting_rewording_is_superseded_by_the_newer_statement():
@@ -826,9 +830,14 @@ def test_contradicting_rewording_is_superseded_by_the_newer_statement():
     store_preferences(["prefers coastal walks to woodland trails when available"])
     store_preferences(["prefers coastal walks and woodland trails"])
 
-    documents = _semantic().get()["documents"]
-    assert documents == ["prefers coastal walks and woodland trails"]
-    assert _semantic().count() == 1, "superseded in place, not appended"
+    raw = _semantic().get()
+    live = [d for d, m in zip(raw["documents"], raw["metadatas"])
+            if not (m or {}).get("superseded_at")]
+    retired = [d for d, m in zip(raw["documents"], raw["metadatas"])
+               if (m or {}).get("superseded_at")]
+    assert live == ["prefers coastal walks and woodland trails"]
+    assert retired == ["prefers coastal walks to woodland trails when available"], \
+        "the older phrasing is retired for history, not deleted"
 
 
 def test_distinct_traits_are_all_kept():
@@ -859,10 +868,15 @@ def test_deduplication_refreshes_the_surviving_rows_timestamp():
     first = _semantic().get(ids=[pref_id])["metadatas"][0]["created_at"]
 
     store_preferences(["prefers walking or public transit over driving"], source="journal")
-    after = _semantic().get(ids=[pref_id])["metadatas"][0]
 
-    assert after["created_at"] >= first
-    assert after["source"] == "journal"
+    # The original row is now retired; recency lives on its replacement.
+    retired = _semantic().get(ids=[pref_id])["metadatas"][0]
+    assert retired["superseded_at"], "the superseded row is kept, marked"
+    raw = _semantic().get()
+    live = [m for m in raw["metadatas"] if not (m or {}).get("superseded_at")]
+    assert len(live) == 1
+    assert live[0]["created_at"] >= first
+    assert live[0]["source"] == "journal"
 
 
 def test_identical_text_still_upserts_in_place():

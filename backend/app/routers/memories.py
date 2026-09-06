@@ -37,6 +37,12 @@ def _rows(collection) -> list[dict]:
             "text": document,
             "source": _source_of(memory_id, metadata),
             "created_at": (metadata or {}).get("created_at"),
+            # Retired preferences are kept rather than deleted, so a preference
+            # changing is visible afterwards. They never retrieve; they are here
+            # so the UI can show how a preference shifted.
+            "superseded_at": (metadata or {}).get("superseded_at"),
+            "superseded_by": (metadata or {}).get("superseded_by"),
+            "supersedes": (metadata or {}).get("supersedes"),
         }
         for memory_id, document, metadata in zip(ids, documents, metadatas)
     ]
@@ -55,13 +61,18 @@ async def get_memories() -> dict:
     Memories page needs to label and delete individual entries.
     """
     episode_rows = _rows(mem._episodic())
-    preference_rows = _rows(mem._semantic())
+    all_preferences = _rows(mem._semantic())
+    preference_rows = [r for r in all_preferences if not r["superseded_at"]]
+    retired_rows = [r for r in all_preferences if r["superseded_at"]]
 
     return {
+        # The plain lists stay live-only: existing callers expect current
+        # preferences, not history.
         "episodes": [r["text"] for r in episode_rows],
         "preferences": [r["text"] for r in preference_rows],
         "episode_rows": episode_rows,
         "preference_rows": preference_rows,
+        "retired_preference_rows": retired_rows,
     }
 
 

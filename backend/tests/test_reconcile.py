@@ -129,8 +129,14 @@ def test_a_reversal_supersedes_rather_than_being_discarded(isolated_memory):
     store_preferences(["prefers 3-day trips"])
     store_preferences(["prefers week-long trips"])
 
-    assert _semantic().get()["documents"] == ["prefers week-long trips"]
-    assert _semantic().count() == 1, "still one row -- superseded, not appended"
+    raw = _semantic().get()
+    live = [d for d, m in zip(raw["documents"], raw["metadatas"])
+            if not (m or {}).get("superseded_at")]
+    assert live == ["prefers week-long trips"]
+    # The reversed-away preference is retired rather than deleted: how a
+    # preference changed is the interesting part, and it also makes a wrong
+    # supersede recoverable.
+    assert _semantic().count() == 2
 
 
 def test_superseding_does_not_merge_genuinely_distinct_traits(isolated_memory):
@@ -140,3 +146,92 @@ def test_superseding_does_not_merge_genuinely_distinct_traits(isolated_memory):
     store_preferences(["likes museums and historic sites"])
 
     assert _semantic().count() == 2
+
+
+# ── Preference history (soft-delete) ────────────────────────────────────────
+
+def _split(collection):
+    raw = collection.get()
+    live, retired = [], []
+    for document, metadata in zip(raw["documents"], raw["metadatas"]):
+        (retired if (metadata or {}).get("superseded_at") else live).append(document)
+    return live, retired
+
+
+def test_a_superseded_preference_is_retired_not_deleted(isolated_memory):
+    """Kept so that how a preference changed stays visible -- and so a wrong
+    supersede is recoverable rather than permanent."""
+    from app.memory import store_preferences, _semantic
+
+    store_preferences(["prefers 3-day trips"])
+    store_preferences(["prefers week-long trips"])
+
+    live, retired = _split(_semantic())
+    assert live == ["prefers week-long trips"]
+    assert retired == ["prefers 3-day trips"]
+
+
+def test_retired_preferences_never_retrieve(isolated_memory):
+    """The whole point: serving a superseded value is the failure this prevents."""
+    from app.memory import store_preferences, search_memory
+
+    store_preferences(["prefers 3-day trips"])
+    store_preferences(["prefers week-long trips"])
+
+    found = search_memory("how long are their trips", collections=("semantic",))["preferences"]
+    assert found == ["prefers week-long trips"]
+
+
+def test_the_change_is_recorded_in_both_directions(isolated_memory):
+    """`superseded_by` on the old row and `supersedes` on the new one -- a UI
+    showing drift needs to walk it either way."""
+    from app.memory import store_preferences, _semantic
+
+    store_preferences(["prefers 3-day trips"])
+    store_preferences(["prefers week-long trips"])
+
+    raw = _semantic().get()
+    by_text = dict(zip(raw["documents"], raw["metadatas"]))
+    assert by_text["prefers 3-day trips"]["superseded_by"] == "prefers week-long trips"
+    assert by_text["prefers week-long trips"]["supersedes"] == "prefers 3-day trips"
+
+
+def test_returning_to_an_earlier_preference_revives_it(isolated_memory):
+    """The bug this caught: a returning preference reuses its old content-hash ID,
+    and **Chroma's upsert merges metadata rather than replacing it** -- so the
+    stale `superseded_at` survived and retired the very row being revived, leaving
+    zero live preferences. Measured, not assumed."""
+    from app.memory import store_preferences, _semantic
+
+    for step in ("prefers 3-day trips", "prefers week-long trips", "prefers 3-day trips"):
+        store_preferences([step])
+
+    live, retired = _split(_semantic())
+    assert live == ["prefers 3-day trips"], "the revived preference must be live again"
+    assert retired == ["prefers week-long trips"]
+
+
+def test_a_retired_row_does_not_swallow_a_new_matching_preference(isolated_memory):
+    """Dedup skips retired rows. Matching one would let a preference the user has
+    returned to be absorbed by its own superseded predecessor."""
+    from app.memory import store_preferences, _semantic, _nearest_preference
+
+    store_preferences(["prefers 3-day trips"])
+    store_preferences(["prefers week-long trips"])
+
+    # The retired "3-day" row is nearest by text, but must not be the match.
+    near = _nearest_preference(_semantic(), "prefers short trips of about 3 days")
+    assert near is None or near[1] == "prefers week-long trips"
+
+
+def test_reconciliation_ignores_already_retired_rows(isolated_memory):
+    """A retired row would otherwise pair against its own successor forever,
+    spending a judge call to re-decide something already settled."""
+    from app.memory import store_preferences, _semantic
+    from app.reconcile import _candidate_pairs
+
+    store_preferences(["prefers 3-day trips"])
+    store_preferences(["prefers week-long trips"])
+
+    for a, b, _ in _candidate_pairs(_semantic()):
+        assert "3-day" not in a["text"] and "3-day" not in b["text"]

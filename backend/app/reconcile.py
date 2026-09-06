@@ -96,11 +96,14 @@ def _candidate_pairs(collection) -> list[tuple[dict, dict, float]]:
     by_id = {
         i: {"id": i, "text": d, "created_at": (m or {}).get("created_at")}
         for i, d, m in zip(ids, documents, list(metadatas) + [None] * len(ids))
+        if memory._is_live(m)
     }
 
     seen: set[frozenset] = set()
     pairs: list[tuple[dict, dict, float]] = []
-    for document in documents:
+    live_documents = [d for d, m in zip(documents, list(metadatas) + [None] * len(ids))
+                      if memory._is_live(m)]
+    for document in live_documents:
         results = collection.query(query_texts=[document], n_results=min(4, len(ids)))
         source_id = next((i for i, r in by_id.items() if r["text"] == document), None)
         if source_id is None:
@@ -212,7 +215,10 @@ async def reconcile_preferences(apply: bool = False, max_pairs: int = 40) -> lis
                     resolution.verdict, resolution.distance,
                     resolution.keep_text[:50], resolution.drop_text[:50])
         if apply:
-            memory.delete_preference(resolution.drop_id)
+            # Retire, not delete. The superseded row is the interesting half of a
+            # preference changing, and keeping it also makes a wrong verdict here
+            # recoverable rather than permanent.
+            memory.retire_preference(resolution.drop_id, resolution.keep_text)
 
     logger.info("reconcile | %d pair(s) judged, %d resolution(s)%s",
                 len(pairs), len(resolutions), " applied" if apply else " (dry run)")

@@ -146,6 +146,24 @@ _PREFERENCE_DUPLICATE_DISTANCE = float(
 )
 
 
+#: Chroma cannot express "field is absent", so live rows are selected by an
+#: explicit marker rather than by the absence of `superseded_at`. Rows written
+#: before this existed have neither, which is why readers filter in Python on the
+#: metadata they got back instead of pushing a `where` clause down.
+def _is_live(metadata: dict | None) -> bool:
+    """A preference still held. Retired rows stay for history but never retrieve."""
+    return not (metadata or {}).get("superseded_at")
+
+
+def _row_metadata(collection: chromadb.Collection, row_id: str) -> dict | None:
+    try:
+        got = collection.get(ids=[row_id])
+        metadatas = got.get("metadatas") or []
+        return metadatas[0] if metadatas else None
+    except Exception:
+        return None
+
+
 def _nearest_preference(
     collection: chromadb.Collection, pref: str
 ) -> tuple[str, str, float] | None:
@@ -157,7 +175,9 @@ def _nearest_preference(
     if collection.count() == 0:
         return None
     try:
-        results = collection.query(query_texts=[pref], n_results=1)
+        # Over-fetch: the nearest row may be a retired one, and skipping it must
+        # not mean missing a live match just behind it.
+        results = collection.query(query_texts=[pref], n_results=min(5, collection.count()))
     except Exception:
         # Dedup is an optimisation, never a reason to lose a write.
         logger.exception("memory | near-duplicate check failed (storing anyway)")
@@ -165,14 +185,19 @@ def _nearest_preference(
     ids = (results.get("ids") or [[]])[0]
     documents = (results.get("documents") or [[]])[0]
     distances = (results.get("distances") or [[]])[0]
-    if not ids or not distances:
-        return None
-    if distances[0] > _PREFERENCE_DUPLICATE_DISTANCE:
-        return None
-    if ids[0] == _preference_id(pref):
-        # Identical text: let the normal upsert refresh it in place.
-        return None
-    return ids[0], documents[0], distances[0]
+    metadatas = (results.get("metadatas") or [[]])[0]
+    for index, row_id in enumerate(ids):
+        if distances[index] > _PREFERENCE_DUPLICATE_DISTANCE:
+            break  # sorted by distance, so nothing further can match
+        # Skip retired rows. Matching one would let a preference the user has
+        # returned to be swallowed by its own superseded predecessor.
+        if not _is_live(metadatas[index] if index < len(metadatas) else None):
+            continue
+        if row_id == _preference_id(pref):
+            # Identical text: let the normal upsert refresh it in place.
+            return None
+        return row_id, documents[index], distances[index]
+    return None
 
 
 def store_preferences(
@@ -219,14 +244,43 @@ def store_preferences(
             # The row keeps its original ID, so the content hash no longer matches
             # its text. That is deliberate: the ID's job is identity across
             # re-writes, and re-keying would orphan the row it is meant to replace.
-            collection.update(ids=[existing_id], documents=[pref], metadatas=[{**meta}])
+            if existing_text.strip() == pref.strip():
+                # Same wording re-demonstrated: refresh recency, keep one row.
+                collection.update(ids=[existing_id], metadatas=[{**meta}])
+            else:
+                # Different wording. Retire the old row rather than overwriting it,
+                # so the change is visible afterwards -- how a preference has
+                # shifted is the interesting part, and an in-place overwrite
+                # destroys exactly that. Retired rows are excluded from retrieval
+                # and from dedup, so they cost nothing at read time.
+                collection.update(ids=[existing_id], metadatas=[{
+                    **(_row_metadata(collection, existing_id) or {}),
+                    "superseded_at": _now(),
+                    "superseded_by": pref,
+                }])
+                # Same revival hazard as below: reversing *back* to an earlier
+                # preference lands on its retired row, and upsert would merge the
+                # stale `superseded_at` straight back in.
+                new_id = _preference_id(pref)
+                if not _is_live(_row_metadata(collection, new_id)):
+                    collection.delete(ids=[new_id])
+                collection.upsert(ids=[new_id], documents=[pref],
+                                  metadatas=[{**meta, "supersedes": existing_text}])
             logger.info(
                 "memory | preference superseded (d=%.3f): %r replaces %r",
                 distance, pref[:60], existing_text[:60],
             )
             skipped += 1
             continue
-        collection.upsert(ids=[_preference_id(pref)], documents=[pref], metadatas=[meta])
+        # A preference the user returns to reuses its old content-hash ID, so the
+        # write lands on the retired row. **Chroma's upsert MERGES metadata**
+        # rather than replacing it, so the stale `superseded_at` would survive and
+        # retire the very row being revived -- measured, not assumed. Delete first
+        # to get clean replacement.
+        row_id = _preference_id(pref)
+        if not _is_live(_row_metadata(collection, row_id)):
+            collection.delete(ids=[row_id])
+        collection.upsert(ids=[row_id], documents=[pref], metadatas=[dict(meta)])
         stored += 1
     logger.info(
         "memory | %d preference(s) stored, %d skipped as near-duplicates (source=%s)",
@@ -253,6 +307,27 @@ def _delete_by_id(collection: chromadb.Collection, memory_id: str, label: str) -
 def delete_episode(memory_id: str) -> bool:
     """Remove one episodic memory. Returns False if no such row."""
     return _delete_by_id(_episodic(), memory_id, "episodic")
+
+
+def retire_preference(memory_id: str, superseded_by: str) -> bool:
+    """Mark a preference superseded rather than deleting it.
+
+    Retired rows are excluded from retrieval and from write-time dedup, so they
+    cost nothing at read time -- but they stay queryable, which is what makes
+    "how have my preferences changed" answerable and what makes a wrong
+    reconciliation recoverable. Deleting the loser, as this used to, threw both
+    away.
+    """
+    collection = _semantic()
+    existing = _row_metadata(collection, memory_id)
+    if existing is None:
+        logger.info("memory | retire missed: id=%s not found", memory_id[:16])
+        return False
+    collection.update(ids=[memory_id], metadatas=[{
+        **existing, "superseded_at": _now(), "superseded_by": superseded_by,
+    }])
+    logger.info("memory | preference retired: id=%s", memory_id[:16])
+    return True
 
 
 def delete_preference(memory_id: str) -> bool:
@@ -586,10 +661,15 @@ def search_memory(
         documents = results["documents"][0] if results["documents"] else []
         ids = results["ids"][0] if results.get("ids") else []
         distances = results["distances"][0] if results.get("distances") else []
+        metadatas = results["metadatas"][0] if results.get("metadatas") else []
         hits = [
             {"id": i, "document": d, "distance": dist}
-            for i, d, dist in zip(ids, documents, distances)
+            for idx, (i, d, dist) in enumerate(zip(ids, documents, distances))
             if dist <= _max_distance(name)
+            # Retired preferences stay stored for history but must never be
+            # retrieved -- serving a superseded value is the failure this whole
+            # mechanism exists to prevent.
+            and (name != "semantic" or _is_live(metadatas[idx] if idx < len(metadatas) else None))
         ]
         dropped = len(ids) - len(hits)
         if dropped:
