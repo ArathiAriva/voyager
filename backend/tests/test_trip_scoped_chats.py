@@ -141,3 +141,32 @@ async def test_deleting_a_trip_unscopes_its_conversations_but_keeps_them(client)
     got = (await client.get(f"/api/conversations/{conv['id']}")).json()
     assert got["id"] == conv["id"], "the transcript is still worth keeping"
     assert got["trip_id"] is None, "must not dangle at a deleted trip"
+
+
+@pytest.mark.asyncio
+async def test_conversations_can_be_listed_by_trip(client):
+    """The reverse lookup -- "what did I discuss about Halifax" -- was impossible
+    before conversations carried a trip."""
+    halifax = (await client.post("/api/trips", json={
+        "destination": "Halifax", "dates": "x", "status": "upcoming", "emoji": "🌊"})).json()
+    kyoto = (await client.post("/api/trips", json={
+        "destination": "Kyoto", "dates": "x", "status": "past", "emoji": "🏯"})).json()
+
+    scoped = (await client.post("/api/conversations", json={"trip_id": halifax["id"]})).json()
+    await client.post("/api/conversations", json={"trip_id": kyoto["id"]})
+    await client.post("/api/conversations")  # unscoped
+
+    listed = (await client.get(f"/api/conversations?trip_id={halifax['id']}")).json()
+    assert [c["id"] for c in listed] == [scoped["id"]]
+
+    everything = (await client.get("/api/conversations")).json()
+    assert len(everything) == 3, "an unfiltered list must still return all of them"
+
+
+@pytest.mark.asyncio
+async def test_listing_a_trip_with_no_conversations_is_empty_not_an_error(client):
+    trip = (await client.post("/api/trips", json={
+        "destination": "Halifax", "dates": "x", "status": "upcoming", "emoji": "🌊"})).json()
+    await client.post("/api/conversations")  # unscoped, must not leak into the filter
+
+    assert (await client.get(f"/api/conversations?trip_id={trip['id']}")).json() == []

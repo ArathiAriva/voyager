@@ -1,6 +1,6 @@
 # Trip-Scoped Chats — design
 
-**Status:** Stages 1–2 built 2026-09-05 (the B-13 fix). Stages 3–4 (UI) not built.
+**Status:** Stages 1–4 built 2026-09-05.
 **Phase:** not in the current phase list. Filed as a candidate alongside
 [Live Trip Mode](live-trip-mode.md) for the priority call.
 
@@ -129,8 +129,8 @@ a wrong guess would now be *persisted* rather than re-derived each turn. It may
 |---|---|---|---|
 | **1** | `trip_id` column + migration; `POST /conversations` accepts it; `PATCH` sets/clears it; returned in the API | Alembic | **built 2026-09-05** |
 | **2** | `_resolve_trip_id` prefers the conversation's trip and never creates a duplicate when scoped | none | **built 2026-09-05** — the B-13 fix |
-| **3** | Trip picker on new chat, live trip preselected; change/clear in the chat header | none | The visible feature |
-| **4** | Trip badge + filter on the chats list; conversations on the trip page | none | Findability |
+| **3** | Trip picker on new chat, live trip preselected; change/clear in the chat header | none | **built 2026-09-05** |
+| **4** | Trip badge on the chats list; `GET /conversations?trip_id=` for the reverse lookup | none | **built 2026-09-05** — the trip-page tab is not built |
 
 Stage 2 is worth pulling forward: it fixes silent duplicate-trip creation and
 depends only on Stage 1's column, not on any UI.

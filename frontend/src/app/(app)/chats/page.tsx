@@ -7,9 +7,12 @@ import {
   fetchConversations,
   createConversation,
   deleteConversation,
+  fetchTrips,
   type ConversationSummary,
+  type Trip,
 } from "@/lib/api";
 import { CompassIcon } from "@/components/icons";
+import { TripScopePicker, TripScopeBadge } from "@/components/trip-scope-picker";
 import { useConfirm } from "@/components/confirm-dialog";
 
 function formatDate(iso: string): string {
@@ -27,8 +30,17 @@ export default function ChatsPage() {
   const router = useRouter();
   const { confirm, dialog } = useConfirm();
   const [conversations, setConversations] = useState<ConversationSummary[]>([]);
+  const [trips, setTrips] = useState<Trip[]>([]);
+  //: Explicit picker choice. `undefined` means "not chosen", which is what lets a
+  //: live trip default in without overriding a deliberate "No specific trip".
+  const [scope, setScope] = useState<string | null | undefined>(undefined);
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
+  const liveTripId = trips.find((t) => t.is_live)?.id ?? null;
+
+  useEffect(() => {
+    fetchTrips().then(setTrips).catch(() => setTrips([]));
+  }, []);
 
   useEffect(() => {
     fetchConversations()
@@ -40,7 +52,9 @@ export default function ChatsPage() {
   async function handleNewChat() {
     setCreating(true);
     try {
-      const conv = await createConversation();
+      // A live trip is the obvious default: mid-trip, nearly every chat is about
+      // it. The picker beside the button overrides, including back to unscoped.
+      const conv = await createConversation(scope ?? liveTripId);
       router.push(`/chats/${conv.id}`);
     } catch {
       setCreating(false);
@@ -93,6 +107,16 @@ export default function ChatsPage() {
             {creating ? <Spinner size="xs" /> : null}
             <Text>New chat</Text>
           </Box>
+        </Flex>
+        <Flex justify="flex-end" mt={2}>
+          {/* Beside the button rather than gating it behind a modal: scoping is
+              optional, so it must not stand between the user and a new chat. */}
+          <TripScopePicker
+            size="xs"
+            trips={trips}
+            value={scope === undefined ? liveTripId : scope}
+            onChange={setScope}
+          />
         </Flex>
       </Box>
 
@@ -159,6 +183,7 @@ export default function ChatsPage() {
                         {conv.title}
                       </Text>
                     </Box>
+                    <TripScopeBadge trip={trips.find((t) => t.id === conv.trip_id)} />
                     <Text fontSize="xs" color="text.secondary" flexShrink={0}>
                       {formatDate(conv.updated_at)}
                     </Text>

@@ -9,10 +9,12 @@ import {
   fetchConversation,
   streamMessage,
   deleteConversation,
+  updateConversation,
   type Message,
   type Trip,
 } from "@/lib/api";
 import { useConfirm } from "@/components/confirm-dialog";
+import { TripScopePicker } from "@/components/trip-scope-picker";
 
 function TripActionCard({ trip, action }: { trip: Trip; action: "trip_created" | "trip_updated" }) {
   const router = useRouter();
@@ -66,6 +68,7 @@ export default function ChatConversationPage() {
   const id = params.id as string;
 
   const { confirm, dialog } = useConfirm();
+  const [tripId, setTripId] = useState<string | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [title, setTitle] = useState("Chat");
   const [input, setInput] = useState("");
@@ -81,6 +84,7 @@ export default function ChatConversationPage() {
       const conv = await fetchConversation(id);
       setMessages(conv.messages);
       setTitle(conv.title);
+      setTripId(conv.trip_id);
     } catch {
       setMessages([]);
     } finally {
@@ -91,6 +95,16 @@ export default function ChatConversationPage() {
   useEffect(() => {
     loadConversation();
   }, [loadConversation]);
+
+  async function handleScopeChange(next: string | null) {
+    const previous = tripId;
+    setTripId(next);  // optimistic; the picker should feel instant
+    try {
+      await updateConversation(id, { trip_id: next });
+    } catch {
+      setTripId(previous);
+    }
+  }
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -187,6 +201,15 @@ export default function ChatConversationPage() {
               {title}
             </Text>
           </Box>
+          {/* Conversations wander -- one starts as "best time to visit Japan" and
+              becomes "plan my Tokyo trip" -- so the scope is changeable here, not
+              fixed at creation. This is also the only path for chats created
+              before scoping existed. */}
+          <TripScopePicker
+            size="xs"
+            value={tripId}
+            onChange={handleScopeChange}
+          />
           <Box
             as="button"
             onClick={handleDelete}

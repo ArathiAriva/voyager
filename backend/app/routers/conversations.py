@@ -322,10 +322,19 @@ async def _run_extraction(conversation_id: str, history: list[dict]) -> None:
 
 
 @router.get("", response_model=list[ConversationSummary])
-async def list_conversations(session: AsyncSession = Depends(get_session)) -> list[ConversationSummary]:
-    result = await session.execute(
-        select(ConversationORM).order_by(ConversationORM.updated_at.desc())
-    )
+async def list_conversations(
+    trip_id: str | None = None,
+    session: AsyncSession = Depends(get_session),
+) -> list[ConversationSummary]:
+    """List conversations, newest first. `trip_id` filters to one trip's chats.
+
+    The reverse lookup -- "what did I discuss about Halifax" -- was impossible
+    before conversations carried a trip.
+    """
+    query = select(ConversationORM).order_by(ConversationORM.updated_at.desc())
+    if trip_id:
+        query = query.where(ConversationORM.trip_id == trip_id)
+    result = await session.execute(query)
     return result.scalars().all()
 
 

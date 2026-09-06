@@ -20,6 +20,9 @@ export interface Conversation {
   title: string;
   created_at: string;
   updated_at: string;
+  /** Trip this chat is about. null is a permanent, legitimate state — plenty of
+   *  chats are general or span every trip. See docs/trip-scoped-chats.md. */
+  trip_id: string | null;
   messages: Message[];
 }
 
@@ -28,6 +31,7 @@ export interface ConversationSummary {
   title: string;
   created_at: string;
   updated_at: string;
+  trip_id: string | null;
 }
 
 export interface ItineraryDay {
@@ -98,8 +102,24 @@ export async function fetchConversations(): Promise<ConversationSummary[]> {
   return res.json() as Promise<ConversationSummary[]>;
 }
 
-export async function createConversation(): Promise<ConversationSummary> {
-  const res = await fetch(`${BASE_URL}/api/conversations`, { method: "POST" });
+export async function updateConversation(
+  id: string, body: { trip_id: string | null },
+): Promise<Conversation> {
+  const res = await fetch(`${BASE_URL}/api/conversations/${id}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error(`Update conversation error: ${res.status}`);
+  return res.json() as Promise<Conversation>;
+}
+
+export async function createConversation(tripId?: string | null): Promise<ConversationSummary> {
+  const res = await fetch(`${BASE_URL}/api/conversations`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ trip_id: tripId ?? null }),
+  });
   if (!res.ok) throw new Error(`Create conversation error: ${res.status}`);
   return res.json() as Promise<ConversationSummary>;
 }
