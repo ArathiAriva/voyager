@@ -58,13 +58,31 @@ covering ~4 traits, including a contradicting pair at 0.978 cosine. Replaying th
 duplicate wastes one retrieval slot, while over-merging silently loses a real
 trait. Dedup fails open — a failed similarity query still stores the preference.
 
-A near-duplicate **supersedes** the stored row's text rather than only refreshing
-its timestamp. Same trait, newest wording — and crucially a *reversal* lands here
-too: "prefers 3-day trips" and "prefers week-long trips" measure 0.303 apart, well
-inside the threshold, so keeping the stored text silently discarded the user
-changing their mind (M-4). The row keeps its original ID, so the content hash no
-longer matches its text; that is deliberate, since the ID's job is identity across
-re-writes.
+A near-duplicate **supersedes** the stored row rather than only refreshing its
+timestamp. Same trait, newest wording — and crucially a *reversal* lands here too:
+"prefers 3-day trips" and "prefers week-long trips" measure 0.303 apart, well inside
+the threshold, so keeping the stored text silently discarded the user changing their
+mind (M-4).
+
+**The superseded row is retired, not deleted.** It gets `superseded_at` and
+`superseded_by`; the replacement gets `supersedes`. Retired rows are excluded from
+retrieval *and* from dedup, so they cost nothing at read time, but they stay
+queryable — which makes "how have my preferences changed" answerable and a wrong
+supersede recoverable. `GET /api/memories` returns them as
+`retired_preference_rows`. This is the shape the field converged on: bitemporal
+ledgers with validity windows, against a measured problem (RAG serves superseded
+values 15–40% of the time when stale and current forms embed alike).
+
+Two hazards here, both found by testing rather than reasoning:
+
+- **Chroma's `upsert` MERGES metadata rather than replacing it.** A preference the
+  user returns to reuses its old content-hash ID, so the write lands on the retired
+  row and the stale `superseded_at` survives — retiring the very row being revived
+  and leaving *zero* live preferences. Both write paths delete-then-upsert when the
+  target ID is retired.
+- **Dedup skips retired rows**, or a preference the user has returned to gets
+  swallowed by its own superseded predecessor. The nearest-neighbour query
+  over-fetches so a retired nearest row cannot hide a live match behind it.
 
 **Conflict too far apart to be deduped is reconciled by a model** (`app/reconcile.py`),
 because distance cannot make this call:
