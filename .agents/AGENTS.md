@@ -1,6 +1,6 @@
 # Voyager — Agent Context
 
-Voyager is an AI travel companion (chat, trip planning, memory, journal RAG) built as a 6-month AI-engineering learning project. Currently at Month 4.5–4.75 of 6: single-agent chat loop + LangGraph multi-agent planner are both live, feature-flagged for A/B evals.
+Voyager is an AI travel companion (chat, trip planning, memory, journal RAG) built as a 6-month AI-engineering learning project. Phases 1-2 built, 3 paused, 4-5 substantially built, and a deliberate *subset* of 6 (deployment + a shared-token lock) pulled forward for a real trip: single-agent chat loop + LangGraph multi-agent planner are both live, feature-flagged for A/B evals.
 
 **Deploying for real use (2026-09-06).** A real Halifax trip on **Sept 18–21** is
 the current driver, which pulls some Month 6 work forward. `app/auth.py` adds a

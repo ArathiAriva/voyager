@@ -34,7 +34,7 @@ Each phase is a capability that deepens over time rather than a box that closes.
 | **Trip-scoped chats** | Conversations carry a `trip_id`; picker on new chat | ✅ Built (all 4 stages) |
 | **Visited places & anecdotes** | Mark a saved place as visited; store the user's own note about it | ✅ Built (Stages 1–3) — chat capture unbuilt |
 | **Conditional preferences + onboarding** | Preferences carry *when* they hold; onboarding asks about contrasting trips | 🕐 Candidate — design only, unscheduled |
-| **6. Production** | Deployment, auth, Postgres/pgvector, rate limits, quotas | Deferred |
+| **6. Production** | Deployment, auth, Postgres/pgvector, rate limits, quotas | 🔄 **Partial** — deployment + a shared-token lock, for one real trip. The rest deferred |
 
 **Deviation worth naming (2026-09-05):** Live Trip Mode, trip-scoped chats, and
 visited places/anecdotes were built while Phase 4 was still "Next". Guiding
@@ -234,12 +234,33 @@ Evolution needs 1–3 shipped *and* enough real usage that contradictions accumu
 naturally; built earlier, there is no way to validate it. Phase 4's distance metrics
 are the signal for when it becomes urgent.
 
-#### Phase 6 — production (deferred)
+#### Phase 6 — production (partially pulled forward 2026-09-06)
 
-Unchanged: Vercel + Railway/Fly container + Supabase (Postgres, auth, pgvector, collapsing
-SQLite and Chroma into one store). Multi-tenant auth, per-user rate limits and LLM budget
-quotas built on the existing usage accounting, secrets management, CI running pytest and
-both eval suites as regression gates.
+**A real Halifax trip on Sept 18–21 is the driver**, and phone access while travelling is
+the one thing local-only cannot give. That justifies a *subset*, not the phase:
+
+- [x] **Deployment** — Fly/Railway container + Vercel frontend (in progress)
+- [x] **Auth** — but a **shared token** (`app/auth.py`), not the multi-tenant auth this
+      phase means. Explicitly not a step toward it: multi-user is a *data isolation*
+      problem here, and process-level isolation fails silently the moment one process
+      serves two users. A login screen over that would look multi-user while pooling
+      everyone's data.
+- [ ] **Postgres/pgvector via Supabase** — deliberately skipped. SQLite and Chroma are
+      fine at 27 saved places and 9 preferences, and migrating would mean recalibrating
+      every distance threshold for a new embedding setup.
+- [ ] **Multi-tenant auth** — needs `user_id` on every table and in every Chroma query
+      first. Wants its own design pass, and it interacts with conditional preferences:
+      both change how preferences are keyed, so the wrong order means migrating twice.
+- [ ] **Per-user rate limits and budget quotas** — but **cap the OpenRouter key** before
+      deploying regardless. Auth stops strangers; it does not stop a client-side loop.
+- [ ] **CI as a regression gate**
+
+The cost of this deviation is a **schema freeze while conditional preferences are
+pending** — migrating a live database later rather than dev profiles. Accepted knowingly.
+
+Measured beforehand, so the sizing is not guesswork: **~$0.17 per multi-agent itinerary,
+$0.0036 per chat turn, $0.0011 per extraction**. The entire five-month build cost $5.34
+across 1,219 calls. Hosting (~$6–11/month) dominates; LLM spend does not.
 
 **Web only.** No native mobile — that is mobile engineering, not AI engineering, and must
 not crowd out the phases above.
