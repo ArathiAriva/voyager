@@ -810,6 +810,23 @@ then running `--judge-model` candidates against those labels. Worth it before an
 per-node model change is judged on quality numbers, since that decision would rest
 entirely on this judge.
 
+**Scaffolding built 2026-09-05** — everything except the labels, which only a human
+can supply:
+
+```bash
+python -m evals.run --planner both            # produce runs to label
+python -m evals.quality_labels_template       # blank scoring template
+#   ... hand-score 10-15 entries ...
+python -m evals.quality_judge_calibrate --labels evals/quality_labels.json
+```
+
+Reports exact / within-1 / **rank correlation** plus signed bias, per judge and per
+dimension. Rank correlation leads because a judge can be systematically harsh and
+still order plans correctly, which is what the planner A/B actually needs.
+
+**Blocked on a corpus, not on effort:** `evals/results/` holds one usable quality run.
+The suite has to be run over the golden set first to produce something to label.
+
 ### S-3 — Finding 3 rests on one payload shape · **cases written, unrun**
 
 The structured-field laundering case (P6) used an obviously malformed injection, so its

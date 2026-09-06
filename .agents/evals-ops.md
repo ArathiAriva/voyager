@@ -86,6 +86,43 @@ Two things to know. **The brief is the highest-value thing in here** — it's th
 
 Also useful for safety-eval forensics — e.g. filtering to `node=build_brief` to check whether an injected instruction survives that node's summarization step (see `docs/safety-evals-spec.md`).
 
+## Judge calibration
+
+Both judges are chosen by **measured agreement with hand labels**, not by argument.
+That matters because the plausible argument — "a judge should not be the model it is
+judging, so use a different provider" — was tested on the safety side (S-8) and turned
+out **wrong**: the cross-provider judge scored 33% agreement against 80% for the
+same-provider one. Self-preference bias is a hypothesis to measure, not act on.
+
+- **Safety** (binary compliance): `evals/safety_judge_calibrate.py`, calibrated.
+- **Quality** (five 1–5 dimensions): `evals/quality_labels_template.py` →
+  hand-score → `evals/quality_judge_calibrate.py`. **Not yet calibrated (S-13)** —
+  the judge still defaults to the model under evaluation, so every historical
+  `mean_score` carries self-preference bias.
+
+The quality workflow:
+
+```bash
+python -m evals.run --planner both            # produce runs to label
+python -m evals.quality_labels_template       # emit a blank scoring template
+#   ... hand-score 10-15 entries, all five dimensions ...
+python -m evals.quality_judge_calibrate --labels evals/quality_labels.json
+```
+
+The template is deliberately **not** prefilled with the existing judge's scores:
+seeing a number before deciding anchors the labeller, and a label anchored to the
+judge cannot measure that judge.
+
+Three agreement measures, because "agreement" is not obvious for ordinal scores.
+**Rank correlation is the headline** — a judge can be systematically harsh and still
+order plans correctly, and ordering is what a planner A/B needs. `within-1` is the
+working tolerance; `exact` is strict enough that 4-vs-5 on `actionability` counts as
+disagreement. `bias` (signed, judge − label) is what self-preference would show up as.
+
+**10–15 labels separates a badly-miscalibrated judge from a reasonable one. It does
+not support fine claims between two reasonable ones**, and historical `mean_score`
+values are not comparable across judges without re-judging.
+
 ## Cost & token accounting (`backend/app/usage.py`)
 
 The OpenRouter client is wrapped once in `app/claude.py`; every call logs model, tokens, and OpenRouter-reported cost (`usage: {include: true}` — no local price table) to the `usage_log` table with a context label: `chat`, `planning`, `memory_extraction`,
