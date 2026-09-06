@@ -206,6 +206,16 @@ TOOL_SCHEMAS = [
                         "enum": list(PLACE_CATEGORIES),
                         "description": "Optional: filter by place type.",
                     },
+                    "visited": {
+                        "type": "boolean",
+                        "description": (
+                            "Optional. true returns only places the user actually went to -- "
+                            "use it for 'where did I eat in Rome' or when recalling a past "
+                            "trip. false returns only ones they saved but have not been to -- "
+                            "use it to avoid re-recommending somewhere they have already been. "
+                            "Omit to search both."
+                        ),
+                    },
                 },
                 "required": ["query"],
             },
@@ -433,6 +443,7 @@ async def _execute_search_places(args: dict, session: AsyncSession) -> str:
         trip_id=args.get("trip_id"),
         category=args.get("category"),
         destination=args.get("destination"),
+        visited=args.get("visited"),
     )
     if not hits:
         return json.dumps({"message": "No saved places found matching that query."})

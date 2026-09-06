@@ -8,13 +8,13 @@ import {
   Spinner, Portal, Tabs,
 } from "@chakra-ui/react";
 import {
-  ChevronLeftIcon, PencilIcon, CloseIcon, BookIcon, MapIcon, PinIcon, LinkIcon,
+  ChevronLeftIcon, PencilIcon, CloseIcon, CheckIcon, BookIcon, MapIcon, PinIcon, LinkIcon,
 } from "@/components/icons";
 import { useConfirm } from "@/components/confirm-dialog";
 import {
   fetchTrip, fetchJournalEntries, createJournalEntry, deleteJournalEntry,
   fetchContent, addContent, deleteContent, updateTrip,
-  fetchPlaces, createPlace, deletePlace,
+  fetchPlaces, createPlace, deletePlace, updatePlace,
   type Trip, type JournalEntry, type ConnectedContent, type TripUpdate, type ItineraryDay,
   type SavedPlace, type PlaceCategory, PLACE_CATEGORIES,
 } from "@/lib/api";
@@ -228,6 +228,25 @@ export default function TripDetailPage() {
       setError("Failed to save place.");
     } finally {
       setSavingPlace(false);
+    }
+  }
+
+  async function handleToggleVisited(place: SavedPlace) {
+    // Optimistic: the toggle should feel instant, and a failed write is recoverable
+    // by clicking again. Reverted on error so the UI never claims a state the
+    // server does not have.
+    const next = !place.visited;
+    setPlaces((prev) => prev.map((p) => (p.id === place.id ? { ...p, visited: next } : p)));
+    setSelectedPlace((prev) => (prev?.id === place.id ? { ...prev, visited: next } : prev));
+    try {
+      await updatePlace(id, place.id, {
+        visited: next,
+        visited_at: next ? new Date().toISOString().slice(0, 10) : null,
+      });
+    } catch {
+      setPlaces((prev) => prev.map((p) => (p.id === place.id ? { ...p, visited: !next } : p)));
+      setSelectedPlace((prev) => (prev?.id === place.id ? { ...prev, visited: !next } : prev));
+      setError("Couldn't update that place.");
     }
   }
 
@@ -728,7 +747,7 @@ export default function TripDetailPage() {
                   bg="bg.surface"
                   borderRadius="xl"
                   border="1px solid"
-                  borderColor="border.default"
+                  borderColor={place.visited ? "green.400" : "border.default"}
                   boxShadow="sm"
                   overflow="hidden"
                   w="220px"
@@ -749,8 +768,18 @@ export default function TripDetailPage() {
                     // No image to show, so this is a thin marker rather than a
                     // 120px empty box. The category name lives in the badge below,
                     // so repeating it here would be redundant.
-                    <Flex h="8" align="center" justify="center" bg="bg.subtle" borderBottom="1px solid" borderColor="border.default">
-                      <Box color="text.muted"><PinIcon size={14} /></Box>
+                    <Flex h="8" align="center" justify="center" gap={1.5}
+                          bg={place.visited ? "green.950" : "bg.subtle"}
+                          borderBottom="1px solid" borderColor="border.default">
+                      <Box color={place.visited ? "green.400" : "text.muted"}>
+                        {place.visited ? <CheckIcon size={13} /> : <PinIcon size={14} />}
+                      </Box>
+                      {place.visited && (
+                        <Text fontSize="10px" fontWeight="700" color="green.400"
+                              letterSpacing="0.06em" textTransform="uppercase">
+                          Visited
+                        </Text>
+                      )}
                     </Flex>
                   )}
                   <Box p={3} flex="1">
@@ -799,17 +828,31 @@ export default function TripDetailPage() {
                         Open
                       </Button>
                     ) : <Box />}
-                    <Button
-                      size="xs"
-                      variant="ghost"
-                      color="text.dim"
-                      _hover={{ color: "red.400" }}
-                      loading={deletingPlaceId === place.id}
-                      onClick={(e) => { e.stopPropagation(); handleDeletePlace(place.id); }}
-                      aria-label="Remove place"
-                    >
-                      <CloseIcon />
-                    </Button>
+                    <HStack gap={0}>
+                      <Button
+                        size="xs"
+                        variant="ghost"
+                        px={2}
+                        color={place.visited ? "green.400" : "text.dim"}
+                        _hover={{ color: "green.400", bg: "bg.subtle" }}
+                        onClick={(e) => { e.stopPropagation(); handleToggleVisited(place); }}
+                        aria-label={place.visited ? "Mark as not visited" : "Mark as visited"}
+                        title={place.visited ? "Mark as not visited" : "Mark as visited"}
+                      >
+                        <CheckIcon size={13} />
+                      </Button>
+                      <Button
+                        size="xs"
+                        variant="ghost"
+                        color="text.dim"
+                        _hover={{ color: "red.400" }}
+                        loading={deletingPlaceId === place.id}
+                        onClick={(e) => { e.stopPropagation(); handleDeletePlace(place.id); }}
+                        aria-label="Remove place"
+                      >
+                        <CloseIcon />
+                      </Button>
+                    </HStack>
                   </HStack>
                 </Flex>
               );
@@ -1008,6 +1051,15 @@ export default function TripDetailPage() {
                   </Box>
                 )}
                 <HStack justify="space-between" pt={1}>
+                  <Button
+                    size="sm"
+                    variant={selectedPlace.visited ? "solid" : "outline"}
+                    colorPalette="green"
+                    onClick={() => handleToggleVisited(selectedPlace)}
+                  >
+                    <CheckIcon size={14} />
+                    {selectedPlace.visited ? "Visited" : "Mark visited"}
+                  </Button>
                   {selectedPlace.url ? (
                     <Button size="sm" colorPalette="blue" variant="outline" onClick={() => window.open(selectedPlace.url!, "_blank")}>
                       <LinkIcon size={13} />

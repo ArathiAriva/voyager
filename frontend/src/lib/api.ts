@@ -277,7 +277,21 @@ export interface SavedPlace {
   summary?: string | null;
   thumbnail_url?: string | null;
   enrichment_status: "none" | "pending" | "done" | "failed";
+  /** Whether the user actually went. See docs/visited-places-and-anecdotes.md. */
+  visited: boolean;
+  visited_at?: string | null;
   created_at: string;
+}
+
+export interface SavedPlaceUpdate {
+  name?: string;
+  category?: PlaceCategory;
+  area?: string | null;
+  address?: string | null;
+  notes?: string | null;
+  summary?: string | null;
+  visited?: boolean;
+  visited_at?: string | null;
 }
 
 export interface SavedPlaceCreate {
@@ -302,6 +316,18 @@ export async function createPlace(tripId: string, body: SavedPlaceCreate): Promi
     body: JSON.stringify(body),
   });
   if (!res.ok) throw new Error(`Create place error: ${res.status}`);
+  return res.json() as Promise<SavedPlace>;
+}
+
+export async function updatePlace(
+  tripId: string, placeId: string, body: SavedPlaceUpdate,
+): Promise<SavedPlace> {
+  const res = await fetch(`${BASE_URL}/api/trips/${tripId}/places/${placeId}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error(`Update place error: ${res.status}`);
   return res.json() as Promise<SavedPlace>;
 }
 

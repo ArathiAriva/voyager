@@ -122,7 +122,8 @@ async def _run_enrichment(place_id: str, url: str, destination: str) -> None:
             await session.refresh(place)
 
         embed_text = place.summary or place.notes or place.name
-        memory.store_saved_place(place_id, place.trip_id, destination, place.name, place.category, embed_text)
+        memory.store_saved_place(place_id, place.trip_id, destination, place.name,
+                                 place.category, embed_text, visited=place.visited)
         logger.info("places | enrichment done for place=%s", place_id[:8])
 
     except httpx.HTTPStatusError as e:
@@ -185,7 +186,8 @@ async def create_place(
     await session.refresh(place)
 
     embed_text = place.notes or place.name
-    memory.store_saved_place(place.id, trip_id, trip.destination, place.name, place.category, embed_text)
+    memory.store_saved_place(place.id, trip_id, trip.destination, place.name,
+                             place.category, embed_text, visited=place.visited)
 
     if body.url:
         spawn_enrichment(place.id, body.url, trip.destination)
@@ -211,7 +213,8 @@ async def update_place(
     await session.refresh(place)
 
     embed_text = place.summary or place.notes or place.name
-    memory.store_saved_place(place.id, trip_id, trip.destination, place.name, place.category, embed_text)
+    memory.store_saved_place(place.id, trip_id, trip.destination, place.name,
+                             place.category, embed_text, visited=place.visited)
 
     return place
 

@@ -182,6 +182,8 @@ class SavedPlaceUpdate(BaseModel):
     address: str | None = None
     notes: str | None = None
     summary: str | None = None
+    visited: bool | None = None
+    visited_at: str | None = None
 
 
 class SavedPlace(SavedPlaceBase):
@@ -190,6 +192,9 @@ class SavedPlace(SavedPlaceBase):
     summary: str | None = None
     thumbnail_url: str | None = None
     enrichment_status: Literal["none", "pending", "done", "failed"] = "none"
+    #: Whether the user actually went. See docs/visited-places-and-anecdotes.md.
+    visited: bool = False
+    visited_at: str | None = None
     created_at: datetime
 
     model_config = {"from_attributes": True}

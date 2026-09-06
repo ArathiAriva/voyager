@@ -1,6 +1,6 @@
 # Visited Places & Anecdotes — design
 
-**Status:** proposed, nothing built.
+**Status:** Stage 1 built 2026-09-05. Stages 2–4 (anecdotes) not built.
 **Phase:** not in the current phase list. Filed as a candidate alongside
 [Live Trip Mode](live-trip-mode.md) and [Trip-Scoped Chats](trip-scoped-chats.md).
 
@@ -134,7 +134,7 @@ descriptive text**:
 
 | Stage | Scope | Migration | Notes |
 |---|---|---|---|
-| **1** | `visited` / `visited_at` columns; toggle on the place card and modal; `visited` filter on `search_places` | Alembic | Useful alone — closes gap (a) |
+| **1** | `visited` / `visited_at` columns; toggle on the place card and modal; `visited` filter on `search_places` | Alembic | **built 2026-09-05** |
 | **2** | `place_anecdotes` table; UI list + add box on the place modal | Alembic | Closes gap (b), UI-only entry |
 | **3** | `anecdotes` Chroma collection; retrieval, ranked above descriptions | none | Makes anecdotes *useful* rather than just stored |
 | **4** | Chat capture — `mark_visited` and `add_anecdote` tools, verbatim, with echo-back | none | Needs [trip-scoped chats](trip-scoped-chats.md) or Live Trip Mode for an unambiguous place |

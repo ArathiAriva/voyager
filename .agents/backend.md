@@ -64,6 +64,15 @@ is correct for a single-user local app and wrong once deployed across timezones.
 to read `status` to decide whether a trip is happening. The stored `status` is
 returned unchanged next to them.
 
+**Saved places carry a `visited` flag.** `saved_places.visited` / `visited_at`
+(migration `c9d4e18a52b6`), toggled from the place card or its modal, and mirrored
+into the Chroma metadata so `search_places` can filter on it — "where did I eat in
+Rome" and "where *could* I eat in Rome" are different questions the store could not
+previously tell apart. The flag must be passed on **every** `store_saved_place`
+call, not just the one that sets it, since PATCH re-embeds the place. A boolean
+rather than a status enum: "planned / visited / skipped" invites a third state
+nobody maintains. See [docs/visited-places-and-anecdotes.md](../docs/visited-places-and-anecdotes.md).
+
 **Conversations can be scoped to a trip.** `conversations.trip_id` (nullable) is set
 at creation (`POST /api/conversations {"trip_id": ...}`) or later
 (`PATCH /api/conversations/{id}`), and threaded to the planning graph as

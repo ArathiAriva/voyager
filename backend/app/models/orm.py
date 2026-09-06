@@ -1,4 +1,4 @@
-from sqlalchemy import String, ForeignKey, Text, DateTime, JSON, Integer, Float
+from sqlalchemy import String, ForeignKey, Text, DateTime, JSON, Integer, Float, Boolean
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from datetime import datetime, timezone
 from app.db import Base
@@ -70,6 +70,21 @@ class SavedPlaceORM(Base):
     summary: Mapped[str | None] = mapped_column(Text, nullable=True)
     thumbnail_url: Mapped[str | None] = mapped_column(String, nullable=True)
     enrichment_status: Mapped[str] = mapped_column(String, nullable=False, default="none")
+
+    # Did the user actually go? A place they booked and loved and one they
+    # bookmarked and skipped were the same row, so Voyager could not answer "where
+    # did I actually eat in Rome", could not avoid re-recommending somewhere they
+    # already went, and could not weight what they *did* above what they merely
+    # considered -- which is the stronger preference signal.
+    #
+    # A boolean, not a status enum: "planned / visited / skipped" invites a third
+    # state nobody maintains. Not-visited is the default and needs no user action.
+    # See docs/visited-places-and-anecdotes.md.
+    visited: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    #: ISO date, when the user says. Optional -- marking a place visited should not
+    #: require also remembering which day.
+    visited_at: Mapped[str | None] = mapped_column(String, nullable=True)
+
     created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
 
     trip: Mapped["TripORM"] = relationship("TripORM", back_populates="saved_places")

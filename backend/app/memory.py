@@ -337,13 +337,20 @@ def _places() -> chromadb.Collection:
 
 
 def store_saved_place(
-    place_id: str, trip_id: str, destination: str, name: str, category: str, text: str
+    place_id: str, trip_id: str, destination: str, name: str, category: str, text: str,
+    visited: bool = False,
 ) -> None:
-    """Embed a saved place for RAG retrieval."""
+    """Embed a saved place for RAG retrieval.
+
+    `visited` rides in the metadata so retrieval can ask for places the user
+    actually went to -- "where did I eat in Rome" is a different question from
+    "where could I eat in Rome", and until now the store could not tell them apart.
+    """
     _places().upsert(
         ids=[place_id],
         documents=[text],
-        metadatas=[{"trip_id": trip_id, "destination": destination, "name": name, "category": category}],
+        metadatas=[{"trip_id": trip_id, "destination": destination, "name": name,
+                    "category": category, "visited": bool(visited)}],
     )
     logger.info("memory | saved place embedded: place=%s trip=%s", place_id[:8], trip_id[:8])
 
@@ -362,6 +369,7 @@ def search_saved_places(
     category: str | None = None,
     n_results: int = 8,
     destination: str | None = None,
+    visited: bool | None = None,
 ) -> list[dict]:
     """Semantic search over saved places.
 
@@ -379,17 +387,23 @@ def search_saved_places(
     """
     collection = _places()
     count = collection.count()
-    filters = {"trip_id": trip_id, "category": category, "destination": destination}
+    filters = {"trip_id": trip_id, "category": category, "destination": destination,
+               "visited": visited}
     if count == 0:
         retrieval.record(collection="saved_places", query=query, n_requested=n_results,
                          result_ids=[], distances=[], latency_ms=0.0, filters=filters)
         return []
-    if trip_id and category:
-        where: dict = {"$and": [{"trip_id": trip_id}, {"category": category}]}
-    elif trip_id:
-        where = {"trip_id": trip_id}
-    elif category:
-        where = {"category": category}
+    clauses: list[dict] = []
+    if trip_id:
+        clauses.append({"trip_id": trip_id})
+    if category:
+        clauses.append({"category": category})
+    if visited is not None:
+        clauses.append({"visited": bool(visited)})
+    if len(clauses) > 1:
+        where: dict = {"$and": clauses}
+    elif clauses:
+        where = clauses[0]
     else:
         where = {}
     # Over-fetch when a destination filter will be applied after the query, so
@@ -421,6 +435,7 @@ def search_saved_places(
                 "destination": place_dest,
                 "name": meta.get("name", ""),
                 "category": meta.get("category", ""),
+                "visited": bool(meta.get("visited", False)),
                 "text": doc,
             })
             if idx < len(raw_distances):
