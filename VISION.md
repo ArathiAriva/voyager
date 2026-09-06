@@ -27,13 +27,21 @@ Each phase is a capability that deepens over time rather than a box that closes.
 |---|---|---|
 | **1. Core architecture** | Agent loop, tool calling, MCP, memory, RAG, multi-agent planning | ✅ Built |
 | **2. Operability** | Eval harness, feature flag, tracing, cost accounting | ✅ Built, ongoing |
-| **3. Trustworthiness** | Agent safety evals — indirect prompt injection, both architectures | 🔄 Active |
-| **4. Observability of retrieval** | Retrieval quality monitoring — the unmeasured RAG layer | Next |
-| **5. Memory maturity** | Preference provenance → dedup → reconciliation → evolution | Blocked on M-2 |
-| **Live Trip Mode** | Agent knows a trip is underway: which day, today's plan | 🕐 Candidate — Stage 1 built, unscheduled |
-| **Trip-scoped chats** | Conversations carry a `trip_id`; picker on new chat | 🕐 Candidate — design only, unscheduled |
-| **Visited places & anecdotes** | Mark a saved place as visited; store the user's own note about it | 🕐 Candidate — design only, unscheduled |
+| **3. Trustworthiness** | Agent safety evals — indirect prompt injection, both architectures | ⏸ Paused 2026-09-03 — suite and results intact, resumes later |
+| **4. Observability of retrieval** | Retrieval quality monitoring — the unmeasured RAG layer | 🔄 Instrumentation + UI built; golden set gated on traffic |
+| **5. Memory maturity** | Preference provenance → dedup → reconciliation → evolution | 🔄 Provenance, dedup and reconciliation built; evolution unscheduled |
+| **Live Trip Mode** | Agent knows a trip is underway: which day, today's plan | ✅ Built (Stages 1, 3, 4) — Stage 2 columns unbuilt |
+| **Trip-scoped chats** | Conversations carry a `trip_id`; picker on new chat | ✅ Built (all 4 stages) |
+| **Visited places & anecdotes** | Mark a saved place as visited; store the user's own note about it | ✅ Built (Stages 1–3) — chat capture unbuilt |
 | **6. Production** | Deployment, auth, Postgres/pgvector, rate limits, quotas | Deferred |
+
+**Deviation worth naming (2026-09-05):** Live Trip Mode, trip-scoped chats, and
+visited places/anecdotes were built while Phase 4 was still "Next". Guiding
+principle 2 says not to build ahead of the phase, and this did. Two mitigations,
+neither a full defence: each began from a *bug* found in the current work (B-13's
+duplicate trips, B-14's lost extractions), and Phase 4's remaining step is gated on
+live traffic rather than effort — the golden set needs real queries to label, and
+`retrieval_log` holds almost none. Using the app is what unblocks it.
 
 Phases 2–4 are the *maintenance* spine: an LLM app gradually builds sophistication in
 measuring itself, and each layer exposes problems the previous one couldn't see. Cost
@@ -58,41 +66,48 @@ retrieval versus a bad LLM.
 - [x] Itinerary generation + storage — agent can plan and persist a day-by-day itinerary per trip; Itinerary tab in UI
 - [x] Multi-profile support — per-user SQLite + Chroma, switchable via `--profile` flag
 - [x] LLM-generated seed data — realistic profiles for development and testing
-- [ ] Preference evolution — moved to Phase 5, and deliberately unscheduled there: it is blocked on M-2 provenance, not on time
+- [ ] Preference evolution — moved to Phase 5 and still unscheduled, but **no longer blocked**: M-2 provenance shipped 2026-09-04. It now waits on enough real usage for genuine change to be distinguishable from extraction noise
 
-**Live Trip Mode** — candidate, not scheduled. Design:
+**Live Trip Mode** — **Stages 1, 3 and 4 built 2026-09-05**. Design:
 [docs/live-trip-mode.md](docs/live-trip-mode.md).
 
 - [x] Stage 1 — trip temporality (`app/live_trip.py`), `get_current_trip` tool,
       system-prompt injection while a trip is underway. No migration: itinerary
       days already carry ISO dates, so any planned trip is live-capable today.
-- [ ] Stage 2 — `start_date`/`end_date` columns + date picker (needs Alembic)
-- [ ] Stage 3 — planner brief carries the live trip; journal entries default to
-      today's trip and date (**likely the highest-value stage** — live capture
-      rather than retrospective writing)
-- [ ] Stage 4 — UI: "Day 2 of 4" on the trip card, today's plan on the trips page
+- [ ] Stage 2 — `start_date`/`end_date` columns + date picker (needs Alembic).
+      **Deliberately skipped**: Stage 1 covers any trip with an itinerary, so the
+      columns only help trips never planned in-app — a migration for a narrow case.
+- [x] Stage 3 — planner brief carries the live trip, so a mid-trip replan plans only
+      the days that remain. The journal half was already done (trip from the URL,
+      date defaulting to today); only **chat capture** remains, and it is gated on
+      the verbatim-mechanism decision below rather than on effort.
+- [x] Stage 4 — "Day 2 of 4" badge on the trip card and detail page. Pulled forward,
+      because Stage 1 created the inconsistency itself: the agent knew the user was
+      on day 2 while the card still read "upcoming".
 
-Stage 1 was built to make the idea concrete for a priority call, not because the
-phase was scheduled. It is self-contained and revertible. **Open question:** this
-is a new capability rather than maintenance, so under guiding principle 2 it
-should not displace Phase 4 (retrieval observability) without a deliberate
-decision.
+Liveness is **derived on read, never stored** — the pre-existing `status = "active"`
+was decorative and went stale, which is the bug this avoids rather than repeats.
 
-**Trip-scoped chats** — candidate, not scheduled. Design:
+**Known limitation:** "today" is the server's local date, correct for a single-user
+local app and wrong once deployed across timezones.
+
+**Trip-scoped chats** — **built 2026-09-05** (all four stages). Design:
 [docs/trip-scoped-chats.md](docs/trip-scoped-chats.md).
 
-Conversations have no `trip_id`, so trip context is re-derived from message text
-every turn — and the planner's `_resolve_trip_id` **silently creates a duplicate
-trip** when its fuzzy destination match misses. Stage 2 of that doc is the fix and
-is arguably a bug rather than a feature, which may let it jump the queue.
+Conversations now carry a nullable `trip_id`, set from a picker on new chat (a live
+trip preselects) or changed in the chat header. This began as a bug fix: the
+planner's `_resolve_trip_id` **silently created a duplicate trip** whenever its
+fuzzy destination match missed (B-13), because it had nothing but a destination
+string to work with.
 
-Note open question 2: a trip-scoped conversation could carry `trip_id` into
-preference extraction, which is the exact missing back-reference behind **B-2**
-(revoking preferences from an edited journal entry) and **M-5** (destination
-scoping). That may be worth more than the UI work.
+Still open — open question 2: carrying `trip_id` into **preference extraction**,
+which is the exact missing back-reference behind **B-2** and **M-5**. Deliberately
+not tacked onto the UI work: which preferences are destination-conditional versus
+durable is a design decision, not plumbing. Probably the highest-value memory item
+left.
 
-**Visited places & anecdotes** — candidate, not scheduled. Design:
-[docs/visited-places-and-anecdotes.md](docs/visited-places-and-anecdotes.md).
+**Visited places & anecdotes** — **Stages 1–3 built 2026-09-05**; chat capture not
+built. Design: [docs/visited-places-and-anecdotes.md](docs/visited-places-and-anecdotes.md).
 
 A saved place cannot be marked as visited, so a restaurant you booked and loved and
 one you bookmarked and skipped are the same row. And the only user-writable text on
@@ -104,8 +119,17 @@ Both gaps have one shape: room for what Voyager *suggests*, none for what the us
 *experienced*. It is also the only feedback edge in the app — Voyager plans a trip,
 the user takes it, and nothing flows back.
 
-Open question 1 is the one to weigh: "went to and wrote warmly about" is the
-strongest preference signal available and the extractor currently cannot see it.
+Places carry a `visited` flag that retrieval can filter on, and `place_anecdotes`
+holds the user's own words in their own Chroma collection — separate from the place's
+description, because "what this place is" and "what happened to me there" are
+different questions.
+
+**Chat capture (Stage 4) is gated on a decision, not on effort:** the agent must
+never author or edit anecdote or journal text, so capture needs either echo-back
+before writing or a client-side path that never routes the text through the model.
+
+Open question 1 is still open and still the one to weigh: "went to and wrote warmly
+about" is the strongest preference signal available, and the extractor cannot see it.
 
 **RAG — journal + saved places**
 
@@ -147,34 +171,46 @@ The honest lesson: most of the effort went into making the measurements *trustwo
 not into writing cases. Five separate defects each produced clean-looking results that
 tested nothing. An eval that is wrong is worse than no eval, because it is believed.
 
-#### Phase 4 — retrieval observability (next)
+#### Phase 4 — retrieval observability (steps 1–3 built; step 4 gated on traffic)
 
-The RAG layer is entirely unmeasured. Both eval suites judge the final reply, so a bad
+The RAG layer was entirely unmeasured. Both eval suites judge the final reply, so a bad
 plan cannot be attributed to bad retrieval versus a bad LLM. Two retrieval bugs surfaced
 by accident in one session (B-6: Rome plans retrieving Lisbon restaurants, live for
 months; S-7: eval fixtures at 3% retrieval share, invalidating a phase of results). A
 single recall metric would have caught both.
 
-Design: [docs/retrieval-quality-spec.md](docs/retrieval-quality-spec.md). Always-on
-`retrieval_log` first (no labels, no LLM calls), then a small labelled golden set.
+Design: [docs/retrieval-quality-spec.md](docs/retrieval-quality-spec.md). **Steps 1–3
+are built**: always-on `retrieval_log` across all four collections, `GET
+/api/retrieval/summary` and `/recent`, and a Retrieval page colour-graded against the
+per-collection distance floors.
 
-#### Phase 5 — memory maturity (blocked)
+**Step 4 — the labelled golden set — is what remains, and it is gated on traffic
+rather than effort.** `retrieval_log` holds almost no real rows, so labelling now
+means guessing the query distribution, which is exactly what steps 1–3 were sequenced
+to avoid. That instrumentation has already earned its keep: a single logged planning
+query exposed both M-9 (retrieval padding results with non-matches) and M-10 (the
+planner embedding raw logistics text against trait statements).
 
-Sequenced, and the ordering is forced by dependencies:
+#### Phase 5 — memory maturity (steps 1–2 built 2026-09-04/05)
 
-1. **M-2 — provenance.** `store_preferences` writes no `created_at`/`source`/`trip_id`.
-   Nothing downstream is possible without it. Chroma metadata is schemaless, so no
-   migration; M-1 already emptied the collection, so there is nothing to backfill —
-   **this is the cheapest it will ever be, and it decays with every row written.**
-2. **M-3/M-4 — dedup and contradiction reconciliation.** Unglamorous hygiene, but this is
-   where the user-visible win is: planning stops pulling a contradictory blob.
-3. **B-2's open half** — revoking preferences derived from an edited journal entry falls
-   out nearly free once `source` exists.
-4. **Preference evolution** — recency weighting, distinguishing genuine change from noise.
+Sequenced, and the ordering was forced by dependencies:
 
-Evolution is deliberately **not** scheduled. It needs 1–3 shipped *and* enough real usage
-that contradictions accumulate naturally; built earlier, there is no way to validate it.
-Phase 4's distance metrics are the signal for when M-3/M-4 become urgent.
+1. ~~**M-2 — provenance.**~~ **Built.** `created_at`, `source` and `destination` on
+   every preference and episode. It was the structural blocker under everything below.
+2. ~~**M-3/M-4 — dedup and contradiction reconciliation.**~~ **Built.** Write-time
+   dedup supersedes a near-duplicate's text; `app/reconcile.py` judges what distance
+   cannot. Measuring the premise changed the design: a contradiction measures 0.303
+   and an agreement 1.049, so no threshold separates them and a model has to decide.
+3. **B-2's open half** — revoking preferences derived from an edited journal entry.
+   Still open, and it did *not* fall out free as predicted: M-2 added `source` but
+   not a per-entry back-reference, so nothing can identify which preferences came
+   from a given entry. Wants the same `trip_id`/`entry_id` work as M-5.
+4. **Preference evolution** — recency weighting, distinguishing genuine change from
+   noise. Still deliberately unscheduled.
+
+Evolution needs 1–3 shipped *and* enough real usage that contradictions accumulate
+naturally; built earlier, there is no way to validate it. Phase 4's distance metrics
+are the signal for when it becomes urgent.
 
 #### Phase 6 — production (deferred)
 
