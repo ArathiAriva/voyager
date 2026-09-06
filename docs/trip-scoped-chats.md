@@ -2,7 +2,8 @@
 
 **Status:** Stages 1–4 built 2026-09-05.
 **Phase:** not in the current phase list. Filed as a candidate alongside
-[Live Trip Mode](live-trip-mode.md) for the priority call.
+[Live Trip Mode](live-trip-mode.md) and
+[Conversational Onboarding](conversational-onboarding.md) for the priority call.
 
 ---
 
