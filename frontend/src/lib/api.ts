@@ -1,5 +1,69 @@
 const BASE_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8060";
 
+const TOKEN_KEY = "voyager-token";
+
+/**
+ * Shared access token for a deployed instance. Unset locally, where the backend
+ * runs without VOYAGER_AUTH_TOKEN and accepts everything.
+ *
+ * localStorage rather than a cookie: the token is not sent automatically, so
+ * there is no CSRF surface, and it survives restarts so it is entered once. It is
+ * readable by any script on the page, which is an accepted limit -- this is a lock
+ * on a single-user app, not an identity system.
+ */
+export function getToken(): string | null {
+  if (typeof window === "undefined") return null;
+  try {
+    return window.localStorage.getItem(TOKEN_KEY);
+  } catch {
+    return null;  // private mode, or storage blocked
+  }
+}
+
+export function setToken(token: string | null): void {
+  if (typeof window === "undefined") return;
+  try {
+    if (token) window.localStorage.setItem(TOKEN_KEY, token);
+    else window.localStorage.removeItem(TOKEN_KEY);
+  } catch {
+    /* nothing useful to do; the request will 401 and prompt again */
+  }
+}
+
+/** Raised on 401 so the UI can prompt for the token instead of showing an error. */
+export class UnauthorizedError extends Error {
+  constructor() {
+    super("Unauthorized");
+    this.name = "UnauthorizedError";
+  }
+}
+
+let onUnauthorized: (() => void) | null = null;
+
+/** Lets the app shell react to a 401 from any of the ~32 call sites at once. */
+export function setUnauthorizedHandler(handler: (() => void) | null): void {
+  onUnauthorized = handler;
+}
+
+/**
+ * fetch with the access token attached.
+ *
+ * Every backend call goes through here rather than each call site adding a
+ * header -- there are ~32 of them, and one missed would 401 in a way that looks
+ * like a bug in that feature rather than a missing token.
+ */
+export async function authFetch(input: string, init: RequestInit = {}): Promise<Response> {
+  const token = getToken();
+  const headers = new Headers(init.headers);
+  if (token) headers.set("Authorization", `Bearer ${token}`);
+  const res = await fetch(input, { ...init, headers });
+  if (res.status === 401) {
+    onUnauthorized?.();
+    throw new UnauthorizedError();
+  }
+  return res;
+}
+
 export type Role = "user" | "assistant";
 
 export interface TripAction {
@@ -97,7 +161,7 @@ export interface ConnectedContent {
 }
 
 export async function fetchConversations(): Promise<ConversationSummary[]> {
-  const res = await fetch(`${BASE_URL}/api/conversations`);
+  const res = await authFetch(`${BASE_URL}/api/conversations`);
   if (!res.ok) throw new Error(`Conversations API error: ${res.status}`);
   return res.json() as Promise<ConversationSummary[]>;
 }
@@ -105,7 +169,7 @@ export async function fetchConversations(): Promise<ConversationSummary[]> {
 export async function updateConversation(
   id: string, body: { trip_id: string | null },
 ): Promise<Conversation> {
-  const res = await fetch(`${BASE_URL}/api/conversations/${id}`, {
+  const res = await authFetch(`${BASE_URL}/api/conversations/${id}`, {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
@@ -115,7 +179,7 @@ export async function updateConversation(
 }
 
 export async function createConversation(tripId?: string | null): Promise<ConversationSummary> {
-  const res = await fetch(`${BASE_URL}/api/conversations`, {
+  const res = await authFetch(`${BASE_URL}/api/conversations`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ trip_id: tripId ?? null }),
@@ -125,7 +189,7 @@ export async function createConversation(tripId?: string | null): Promise<Conver
 }
 
 export async function fetchConversation(id: string): Promise<Conversation> {
-  const res = await fetch(`${BASE_URL}/api/conversations/${id}`);
+  const res = await authFetch(`${BASE_URL}/api/conversations/${id}`);
   if (!res.ok) throw new Error(`Conversation API error: ${res.status}`);
   return res.json() as Promise<Conversation>;
 }
@@ -140,7 +204,7 @@ export async function* streamMessage(
   content: string,
   signal?: AbortSignal,
 ): AsyncGenerator<StreamEvent> {
-  const res = await fetch(`${BASE_URL}/api/conversations/${conversationId}/messages`, {
+  const res = await authFetch(`${BASE_URL}/api/conversations/${conversationId}/messages`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ content }),
@@ -177,24 +241,24 @@ export async function* streamMessage(
 }
 
 export async function deleteConversation(id: string): Promise<void> {
-  const res = await fetch(`${BASE_URL}/api/conversations/${id}`, { method: "DELETE" });
+  const res = await authFetch(`${BASE_URL}/api/conversations/${id}`, { method: "DELETE" });
   if (!res.ok) throw new Error(`Delete conversation error: ${res.status}`);
 }
 
 export async function fetchTrips(): Promise<Trip[]> {
-  const res = await fetch(`${BASE_URL}/api/trips`);
+  const res = await authFetch(`${BASE_URL}/api/trips`);
   if (!res.ok) throw new Error(`Trips API error: ${res.status}`);
   return res.json() as Promise<Trip[]>;
 }
 
 export async function fetchTrip(id: string): Promise<Trip> {
-  const res = await fetch(`${BASE_URL}/api/trips/${id}`);
+  const res = await authFetch(`${BASE_URL}/api/trips/${id}`);
   if (!res.ok) throw new Error(`Trip API error: ${res.status}`);
   return res.json() as Promise<Trip>;
 }
 
 export async function createTrip(body: TripCreate): Promise<Trip> {
-  const res = await fetch(`${BASE_URL}/api/trips`, {
+  const res = await authFetch(`${BASE_URL}/api/trips`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
@@ -213,7 +277,7 @@ export interface TripUpdate {
 }
 
 export async function updateTrip(id: string, body: TripUpdate): Promise<Trip> {
-  const res = await fetch(`${BASE_URL}/api/trips/${id}`, {
+  const res = await authFetch(`${BASE_URL}/api/trips/${id}`, {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
@@ -223,20 +287,20 @@ export async function updateTrip(id: string, body: TripUpdate): Promise<Trip> {
 }
 
 export async function deleteTrip(id: string): Promise<void> {
-  const res = await fetch(`${BASE_URL}/api/trips/${id}`, { method: "DELETE" });
+  const res = await authFetch(`${BASE_URL}/api/trips/${id}`, { method: "DELETE" });
   if (!res.ok) throw new Error(`Delete trip error: ${res.status}`);
 }
 
 // ── Journal ──────────────────────────────────────────────────────────────────
 
 export async function fetchJournalEntries(tripId: string): Promise<JournalEntry[]> {
-  const res = await fetch(`${BASE_URL}/api/trips/${tripId}/journal`);
+  const res = await authFetch(`${BASE_URL}/api/trips/${tripId}/journal`);
   if (!res.ok) throw new Error(`Journal API error: ${res.status}`);
   return res.json() as Promise<JournalEntry[]>;
 }
 
 export async function createJournalEntry(tripId: string, body: JournalEntryCreate): Promise<JournalEntry> {
-  const res = await fetch(`${BASE_URL}/api/trips/${tripId}/journal`, {
+  const res = await authFetch(`${BASE_URL}/api/trips/${tripId}/journal`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
@@ -246,20 +310,20 @@ export async function createJournalEntry(tripId: string, body: JournalEntryCreat
 }
 
 export async function deleteJournalEntry(tripId: string, entryId: string): Promise<void> {
-  const res = await fetch(`${BASE_URL}/api/trips/${tripId}/journal/${entryId}`, { method: "DELETE" });
+  const res = await authFetch(`${BASE_URL}/api/trips/${tripId}/journal/${entryId}`, { method: "DELETE" });
   if (!res.ok) throw new Error(`Delete journal entry error: ${res.status}`);
 }
 
 // ── Connected content ─────────────────────────────────────────────────────────
 
 export async function fetchContent(tripId: string): Promise<ConnectedContent[]> {
-  const res = await fetch(`${BASE_URL}/api/trips/${tripId}/content`);
+  const res = await authFetch(`${BASE_URL}/api/trips/${tripId}/content`);
   if (!res.ok) throw new Error(`Content API error: ${res.status}`);
   return res.json() as Promise<ConnectedContent[]>;
 }
 
 export async function addContent(tripId: string, url: string, type: ConnectedContent["type"]): Promise<ConnectedContent> {
-  const res = await fetch(`${BASE_URL}/api/trips/${tripId}/content`, {
+  const res = await authFetch(`${BASE_URL}/api/trips/${tripId}/content`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ url, type }),
@@ -269,7 +333,7 @@ export async function addContent(tripId: string, url: string, type: ConnectedCon
 }
 
 export async function deleteContent(tripId: string, contentId: string): Promise<void> {
-  const res = await fetch(`${BASE_URL}/api/trips/${tripId}/content/${contentId}`, { method: "DELETE" });
+  const res = await authFetch(`${BASE_URL}/api/trips/${tripId}/content/${contentId}`, { method: "DELETE" });
   if (!res.ok) throw new Error(`Delete content error: ${res.status}`);
 }
 
@@ -324,13 +388,13 @@ export interface SavedPlaceCreate {
 }
 
 export async function fetchPlaces(tripId: string): Promise<SavedPlace[]> {
-  const res = await fetch(`${BASE_URL}/api/trips/${tripId}/places`);
+  const res = await authFetch(`${BASE_URL}/api/trips/${tripId}/places`);
   if (!res.ok) throw new Error(`Places API error: ${res.status}`);
   return res.json() as Promise<SavedPlace[]>;
 }
 
 export async function createPlace(tripId: string, body: SavedPlaceCreate): Promise<SavedPlace> {
-  const res = await fetch(`${BASE_URL}/api/trips/${tripId}/places`, {
+  const res = await authFetch(`${BASE_URL}/api/trips/${tripId}/places`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
@@ -342,7 +406,7 @@ export async function createPlace(tripId: string, body: SavedPlaceCreate): Promi
 export async function updatePlace(
   tripId: string, placeId: string, body: SavedPlaceUpdate,
 ): Promise<SavedPlace> {
-  const res = await fetch(`${BASE_URL}/api/trips/${tripId}/places/${placeId}`, {
+  const res = await authFetch(`${BASE_URL}/api/trips/${tripId}/places/${placeId}`, {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
@@ -360,7 +424,7 @@ export interface PlaceAnecdote {
 }
 
 export async function fetchAnecdotes(tripId: string, placeId: string): Promise<PlaceAnecdote[]> {
-  const res = await fetch(`${BASE_URL}/api/trips/${tripId}/places/${placeId}/anecdotes`);
+  const res = await authFetch(`${BASE_URL}/api/trips/${tripId}/places/${placeId}/anecdotes`);
   if (!res.ok) throw new Error(`Anecdotes API error: ${res.status}`);
   return res.json() as Promise<PlaceAnecdote[]>;
 }
@@ -368,7 +432,7 @@ export async function fetchAnecdotes(tripId: string, placeId: string): Promise<P
 export async function createAnecdote(
   tripId: string, placeId: string, body: string,
 ): Promise<PlaceAnecdote> {
-  const res = await fetch(`${BASE_URL}/api/trips/${tripId}/places/${placeId}/anecdotes`, {
+  const res = await authFetch(`${BASE_URL}/api/trips/${tripId}/places/${placeId}/anecdotes`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     // Sent verbatim. The agent never authors or edits this text.
@@ -381,7 +445,7 @@ export async function createAnecdote(
 export async function deleteAnecdote(
   tripId: string, placeId: string, anecdoteId: string,
 ): Promise<void> {
-  const res = await fetch(
+  const res = await authFetch(
     `${BASE_URL}/api/trips/${tripId}/places/${placeId}/anecdotes/${anecdoteId}`,
     { method: "DELETE" },
   );
@@ -389,7 +453,7 @@ export async function deleteAnecdote(
 }
 
 export async function deletePlace(tripId: string, placeId: string): Promise<void> {
-  const res = await fetch(`${BASE_URL}/api/trips/${tripId}/places/${placeId}`, { method: "DELETE" });
+  const res = await authFetch(`${BASE_URL}/api/trips/${tripId}/places/${placeId}`, { method: "DELETE" });
   if (!res.ok) throw new Error(`Delete place error: ${res.status}`);
 }
 
@@ -414,7 +478,7 @@ export interface Memories {
 }
 
 export async function fetchMemories(): Promise<Memories> {
-  const res = await fetch(`${BASE_URL}/api/memories`);
+  const res = await authFetch(`${BASE_URL}/api/memories`);
   if (!res.ok) throw new Error(`Memories API error: ${res.status}`);
   return res.json() as Promise<Memories>;
 }
@@ -423,7 +487,7 @@ export async function deleteMemory(
   kind: "episodic" | "semantic",
   id: string,
 ): Promise<void> {
-  const res = await fetch(`${BASE_URL}/api/memories/${kind}/${encodeURIComponent(id)}`, {
+  const res = await authFetch(`${BASE_URL}/api/memories/${kind}/${encodeURIComponent(id)}`, {
     method: "DELETE",
   });
   if (!res.ok) throw new Error(`Delete memory error: ${res.status}`);
@@ -470,7 +534,7 @@ export interface RetrievalCall {
 }
 
 export async function fetchRetrievalSummary(days = 30): Promise<RetrievalSummary> {
-  const res = await fetch(`${BASE_URL}/api/retrieval/summary?days=${days}`);
+  const res = await authFetch(`${BASE_URL}/api/retrieval/summary?days=${days}`);
   if (!res.ok) throw new Error(`Retrieval summary error: ${res.status}`);
   return res.json() as Promise<RetrievalSummary>;
 }
@@ -481,7 +545,7 @@ export async function fetchRecentRetrievals(
   const params = new URLSearchParams({ limit: String(opts.limit ?? 50) });
   if (opts.collection) params.set("collection", opts.collection);
   if (opts.zeroOnly) params.set("zero_only", "true");
-  const res = await fetch(`${BASE_URL}/api/retrieval/recent?${params}`);
+  const res = await authFetch(`${BASE_URL}/api/retrieval/recent?${params}`);
   if (!res.ok) throw new Error(`Recent retrievals error: ${res.status}`);
   return res.json() as Promise<RetrievalCall[]>;
 }
@@ -518,13 +582,13 @@ export interface UsageCall {
 }
 
 export async function fetchUsageSummary(days = 30): Promise<UsageSummary> {
-  const res = await fetch(`${BASE_URL}/api/usage/summary?days=${days}`);
+  const res = await authFetch(`${BASE_URL}/api/usage/summary?days=${days}`);
   if (!res.ok) throw new Error(`Usage API error: ${res.status}`);
   return res.json() as Promise<UsageSummary>;
 }
 
 export async function fetchRecentUsage(limit = 50): Promise<UsageCall[]> {
-  const res = await fetch(`${BASE_URL}/api/usage/recent?limit=${limit}`);
+  const res = await authFetch(`${BASE_URL}/api/usage/recent?limit=${limit}`);
   if (!res.ok) throw new Error(`Usage API error: ${res.status}`);
   return res.json() as Promise<UsageCall[]>;
 }
@@ -561,7 +625,7 @@ export interface PlanningRunDetail extends Omit<PlanningRunSummary, "step_count"
 }
 
 export async function fetchPlanningRuns(limit = 30): Promise<PlanningRunSummary[]> {
-  const res = await fetch(`${BASE_URL}/api/planning/runs?limit=${limit}`);
+  const res = await authFetch(`${BASE_URL}/api/planning/runs?limit=${limit}`);
   if (!res.ok) throw new Error(`Planning API error: ${res.status}`);
   return res.json() as Promise<PlanningRunSummary[]>;
 }
@@ -575,7 +639,7 @@ export class ApiError extends Error {
 }
 
 export async function fetchPlanningRun(id: string): Promise<PlanningRunDetail> {
-  const res = await fetch(`${BASE_URL}/api/planning/runs/${id}`);
+  const res = await authFetch(`${BASE_URL}/api/planning/runs/${id}`);
   if (!res.ok) throw new ApiError(`Planning API error: ${res.status}`, res.status);
   return res.json() as Promise<PlanningRunDetail>;
 }

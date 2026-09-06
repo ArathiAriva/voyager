@@ -38,6 +38,7 @@ import app.models.orm  # noqa: F401 — ensure all ORM models are registered on 
 from app.routers import (trips, conversations, journal, content, memories, places,
                          usage, retrieval, planning)
 from app.observability import setup_tracing
+from app.auth import auth_middleware, auth_token
 from app import flags
 
 logger = logging.getLogger("voyager.main")
@@ -46,9 +47,21 @@ setup_tracing()  # no-op unless PHOENIX_COLLECTOR_ENDPOINT is set
 
 app = FastAPI(title="Voyager API", version="0.1.0")
 
+# Auth is added FIRST so CORS wraps it: Starlette applies middleware in reverse,
+# so the last-added runs outermost. A 401 that skips CORS headers reaches the
+# browser as an opaque network error rather than a 401, which is impossible to
+# debug from the client side.
+app.middleware("http")(auth_middleware)
+
+# Origins are configurable because the deployed frontend is not on localhost.
+# VOYAGER_CORS_ORIGINS is a comma-separated list; the localhost defaults stay so
+# local development needs no configuration.
+_DEFAULT_ORIGINS = ["http://localhost:3000", "http://localhost:3060", "http://voyager.localhost"]
+_extra_origins = [o.strip() for o in os.environ.get("VOYAGER_CORS_ORIGINS", "").split(",") if o.strip()]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://localhost:3060", "http://voyager.localhost"],
+    allow_origins=_DEFAULT_ORIGINS + _extra_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -75,6 +88,17 @@ _SEED_TRIPS = [
 async def startup() -> None:
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+    # Fail loudly-ish about an unprotected deployment. Auth defaults to off so
+    # local development needs no setup, which means a deployment that forgets the
+    # variable is wide open -- and its OpenRouter key is the expensive part.
+    if auth_token() is None:
+        logger.warning(
+            "startup | NO AUTH TOKEN SET — every endpoint is public. Fine locally; "
+            "set VOYAGER_AUTH_TOKEN before exposing this to the internet."
+        )
+    else:
+        logger.info("startup | auth enabled (shared token)")
+
     # Re-extract any conversation whose memory never got written -- an interrupted
     # process loses in-flight extractions silently (B-14). Idempotent and bounded;
     # fail-open, since a failed scan must not stop the server booting.

@@ -113,6 +113,35 @@ description is guidance rather than a guarantee:
   first write are unaffected. A genuinely shorter trip needs `update_trip` on the
   dates first, after confirming with the user.
 
+## Authentication (`app/auth.py`)
+
+**A lock, not an identity system.** Voyager has no user model — isolation is
+process-level (`run.sh --profile` sets `DATABASE_URL`/`CHROMA_PATH` for the whole
+process), so a shared token is the honest fit. The threat is a public URL letting
+strangers spend the deployment's OpenRouter credit and reach the 15 write endpoints.
+
+It is **not** a step toward multi-user. That needs `user_id` on every table,
+`user_id` in Chroma metadata with every query filtering on it, and request-scoped
+sessions replacing the import-time singleton — the memory analysis flags
+process-level isolation as failing *silently* the moment one process serves two
+users. A login screen in front of a single-tenant app would look multi-user while
+pooling everyone's data, which is worse than no login.
+
+What is forward-looking is the shape: everything resolves a `Principal` from
+`resolve_principal()`. Today the shared token yields `"owner"`; later a JWT could
+yield a real user id without touching call sites.
+
+Implementation notes worth keeping:
+
+- **Middleware, not a per-route dependency.** A route added later would silently be
+  unprotected if this were opt-in.
+- **Added before CORS**, so CORS wraps it — Starlette applies middleware in reverse.
+  A 401 without CORS headers reaches the browser as an opaque network error.
+- **`hmac.compare_digest`**, since `==` leaks the token's length and prefix through
+  timing.
+- **A blank env var counts as disabled**, so a common deployment slip cannot mean
+  "accept the empty string as valid".
+
 ## Conventions
 
 - Never instantiate an LLM client outside `app/claude.py`; import `get_client()` and `get_model()`.
@@ -141,4 +170,6 @@ bash scripts/migrate.sh               # Alembic migrations with DB backup/auto-r
 | `VOYAGER_MAX_RETRIEVAL_DISTANCE` | No | Global override for the vector-search distance floor. Per-collection defaults (semantic/episodic 1.30, journals 1.45, saved_places 1.75) are usually what you want — see memory.md. |
 | `VOYAGER_MAX_RETRIEVAL_DISTANCE_<COLLECTION>` | No | Overrides one collection's floor, e.g. `..._SEMANTIC`. Wins over the global override. |
 | `VOYAGER_PREFERENCE_DEDUPE_DISTANCE` | No | L2 distance under which an incoming preference is treated as a re-wording of an existing one and skipped. Default `0.55`; calibrated on all-MiniLM-L6-v2 — see memory.md. |
+| `VOYAGER_AUTH_TOKEN` | No | Shared access token. **Unset = every endpoint is public**, which is right locally and wrong on the internet — startup logs a warning when unset. Sent as `Authorization: Bearer <token>`, or `?token=` for SSE clients that cannot set headers. `/health` and the OpenAPI routes stay public. |
+| `VOYAGER_CORS_ORIGINS` | No | Comma-separated extra origins. The localhost defaults always apply; add the deployed frontend's origin here. |
 | `BRAVE_API_KEY` | No | Enables the `web_search` MCP tool; without it the tool returns a "not configured" message instead of failing. Passed through to the MCP subprocess explicitly by `mcp_client.py` — the SDK only inherits an allowlist. |
