@@ -810,17 +810,25 @@ def test_rewording_of_an_existing_preference_is_not_stored_twice():
     assert _semantic().count() == 1
 
 
-def test_contradicting_rewording_keeps_the_first_phrasing():
+def test_contradicting_rewording_is_superseded_by_the_newer_statement():
     """The pair that motivated this: one says coastal *instead of* woodland, the
     other coastal *and* woodland. Both were stored with equal authority and no way
-    to resolve them. Keeping the first is a deliberate, documented choice."""
+    to resolve them.
+
+    The newer statement now supersedes the stored one. Keeping the first was the
+    original choice, but it is wrong for exactly this pair -- these disagree, so
+    preserving the older text discards the user's current position. Distance
+    cannot tell a reversal from a re-wording (a real contradiction measures 0.303,
+    an agreement 1.049), so within the dedup threshold the newer text wins and
+    genuine conflict further apart is left to reconciliation (M-4)."""
     from app.memory import store_preferences, _semantic
 
     store_preferences(["prefers coastal walks to woodland trails when available"])
     store_preferences(["prefers coastal walks and woodland trails"])
 
     documents = _semantic().get()["documents"]
-    assert documents == ["prefers coastal walks to woodland trails when available"]
+    assert documents == ["prefers coastal walks and woodland trails"]
+    assert _semantic().count() == 1, "superseded in place, not appended"
 
 
 def test_distinct_traits_are_all_kept():

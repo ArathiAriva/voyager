@@ -57,8 +57,32 @@ covering ~4 traits, including a contradicting pair at 0.978 cosine. Replaying th
 duplicate wastes one retrieval slot, while over-merging silently loses a real
 trait. Dedup fails open — a failed similarity query still stores the preference.
 
-It handles re-wordings, **not** semantic conflict: two genuinely different traits
-that contradict each other are still both stored (M-4).
+A near-duplicate **supersedes** the stored row's text rather than only refreshing
+its timestamp. Same trait, newest wording — and crucially a *reversal* lands here
+too: "prefers 3-day trips" and "prefers week-long trips" measure 0.303 apart, well
+inside the threshold, so keeping the stored text silently discarded the user
+changing their mind (M-4). The row keeps its original ID, so the content hash no
+longer matches its text; that is deliberate, since the ID's job is identity across
+re-writes.
+
+**Conflict too far apart to be deduped is reconciled by a model** (`app/reconcile.py`),
+because distance cannot make this call:
+
+```
+CONTRADICT  0.303   'prefers 3-day trips'       vs 'prefers week-long trips'
+AGREE       0.688   'does not drink alcohol'    vs 'dislikes alcohol'
+AGREE       1.049   'enjoys street food'        vs 'loves cheap local eats'
+DISTINCT    1.184   'enjoys shopping'           vs 'likes museums'
+CONTRADICT  1.272   'travels on a tight budget' vs 'enjoys luxury hotels'
+```
+
+Candidate pairs are swept from a nearest-neighbour query bounded to 0.55–1.30, and
+one LLM call judges the batch. **Contradictions keep the newer** row; **duplicates
+keep the older**, because recency there reflects only when the extractor re-worded
+it — re-extraction once turned "does not drink alcohol" into "dislikes alcohol",
+and latest-wins would have kept the paraphrase. Run on demand via
+`scripts/reconcile_preferences.py` (dry-run by default); it is not on the write
+path, so `store_preferences` stays synchronous and LLM-free.
 
 ## Retrieval
 

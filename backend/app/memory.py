@@ -203,11 +203,20 @@ def store_preferences(
         near = _nearest_preference(collection, pref)
         if near is not None:
             existing_id, existing_text, distance = near
-            # Refresh the surviving row's timestamp: the trait was just
-            # re-demonstrated, which is exactly what recency should reflect.
-            collection.update(ids=[existing_id], metadatas=[{**meta}])
+            # Supersede the stored row with the incoming text rather than only
+            # refreshing its timestamp. Two statements this close are the same
+            # trait, so the newer phrasing is the user's current wording -- and
+            # crucially, a *reversal* lands here too: "prefers 3-day trips" and
+            # "prefers week-long trips" measure 0.303 apart, well inside the
+            # threshold, so keeping the stored text would silently discard the
+            # user changing their mind and preserve the stale opposite (M-4).
+            #
+            # The row keeps its original ID, so the content hash no longer matches
+            # its text. That is deliberate: the ID's job is identity across
+            # re-writes, and re-keying would orphan the row it is meant to replace.
+            collection.update(ids=[existing_id], documents=[pref], metadatas=[{**meta}])
             logger.info(
-                "memory | preference skipped as near-duplicate (d=%.3f): %r ~ %r",
+                "memory | preference superseded (d=%.3f): %r replaces %r",
                 distance, pref[:60], existing_text[:60],
             )
             skipped += 1

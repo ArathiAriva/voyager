@@ -606,21 +606,46 @@ query raises, the write still happens.
 Note this handles *re-wordings*, not semantic conflict. Two genuinely different
 traits that contradict each other are still both stored — that's M-4.
 
-### M-4 — Nothing reconciles contradictions or bounds growth
+### ~~M-4 — Nothing reconciles contradictions or bounds growth~~ · **fixed 2026-09-05**
 
 No cap, TTL, aging, compaction, or semantic contradiction handling. Growth is
 monotonic at ~3 preferences per conversation.
 
-**Partially addressed by M-3's write-time dedup (2026-09-04)**, which bounds the
-*re-wording* class of growth — the 13→6 case. What remains is genuine
-contradiction between distinct statements ("prefers 3-day trips" vs "prefers
-week-long trips"), which dedup deliberately does not touch because the texts are
-far apart in embedding space. `created_at` now exists and is refreshed on every
-re-demonstration, so "latest wins" is implementable; a cap or TTL still needs a
-null-safe default for rows written before 2026-09-04. **Unblocked by M-2 (2026-09-04)**: rows now
-carry `created_at`, so "latest wins" — the cheapest reconciliation strategy — is
-now implementable. Note only rows written after that date have it; a cap or TTL
-needs a null-safe default for older rows.
+**The premise turned out to be wrong**, and measuring it changed the design.
+Distance does not separate agreement from contradiction:
+
+```
+CONTRADICT  0.303   'prefers 3-day trips'       vs 'prefers week-long trips'
+AGREE       0.688   'does not drink alcohol'    vs 'dislikes alcohol'
+CONTRADICT  0.971   'prefers early starts'      vs 'prefers slow lazy mornings'
+AGREE       1.049   'enjoys street food'        vs 'loves cheap local eats'
+DISTINCT    1.184   'enjoys shopping'           vs 'likes museums'
+CONTRADICT  1.272   'travels on a tight budget' vs 'enjoys luxury hotels'
+```
+
+A contradiction can sit closer than a re-wording, and an agreement further apart
+than two unrelated traits — so no threshold works, in either direction. Worse,
+the assumption that dedup "does not touch" contradictions was backwards: at 0.303
+the reversal was *inside* the dedup threshold, so `store_preferences` silently
+discarded the user changing their mind and kept the stale opposite.
+
+Fixed in two halves:
+
+1. **Write-time supersede.** A near-duplicate now replaces the stored row's text,
+   not just its timestamp. Same trait, current wording — and a reversal stated
+   close to its opposite lands here and correctly wins.
+2. **`app/reconcile.py` for what distance cannot judge.** Candidate pairs come
+   from a nearest-neighbour sweep bounded to 0.55–1.30, and one LLM call judges
+   the whole batch as contradiction / duplicate / compatible. Contradictions keep
+   the newer row; duplicates keep the *older* one, because recency there reflects
+   only when the extractor re-worded it — observed live, re-extraction turned
+   "does not drink alcohol" into "dislikes alcohol", and latest-wins would have
+   kept the paraphrase. Run via `scripts/reconcile_preferences.py`, dry-run by
+   default. Applied to `moiraine`: 10 → 9.
+
+Growth bounding (a cap or TTL) is **not** included and remains open — the row
+count is small enough that it has never been the binding constraint, and the
+duplicate class it would target is now handled at write time.
 
 ### M-5 — Preferences aren't scoped to a trip or destination
 
