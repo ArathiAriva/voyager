@@ -64,6 +64,20 @@ is correct for a single-user local app and wrong once deployed across timezones.
 to read `status` to decide whether a trip is happening. The stored `status` is
 returned unchanged next to them.
 
+**Conversations can be scoped to a trip.** `conversations.trip_id` (nullable) is set
+at creation (`POST /api/conversations {"trip_id": ...}`) or later
+(`PATCH /api/conversations/{id}`), and threaded to the planning graph as
+`conversation_trip_id`. `_resolve_trip_id` uses it directly and **creates no trip** —
+without it the graph had only a destination string and invented a duplicate whenever
+its fuzzy match missed (B-13). NULL is permanent and legitimate: most chats are
+unscoped, and those still resolve by destination as before. See
+[docs/trip-scoped-chats.md](../docs/trip-scoped-chats.md).
+
+Note `ondelete` is **decorative** throughout this schema — SQLite does not enforce
+foreign keys without `PRAGMA foreign_keys=ON`, which the app does not set, so the
+`CASCADE`s are SQLAlchemy relationship cascades. `delete_trip` therefore clears
+`conversations.trip_id` explicitly rather than relying on `SET NULL`.
+
 **Editing a trip.** `update_trip` patches metadata (`destination`, `dates`,
 `status`, `emoji`, `summary`, `tags`) — only the fields passed. Itineraries are
 separate: `set_itinerary` **replaces the whole itinerary**, so an edit must pass

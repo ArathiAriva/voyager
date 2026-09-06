@@ -210,9 +210,26 @@ async def _resolve_trip_id(state: PlanningState, session: AsyncSession) -> str |
     The graph is invoked without a trip_id for fresh plans (the design doc's
     'match by destination' step) — without this, persist_itinerary silently
     no-ops and the itinerary is never saved.
+
+    B-13: creating a trip is the last resort, not the fallback. When the
+    conversation is scoped to a trip the answer is already known, and inventing a
+    second trip for the same journey is silent corruption — everything persisted
+    afterwards attaches to the wrong one.
     """
     brief = state.get("brief") or {}
     destination = (brief.get("destination") or "").strip()
+
+    # A scoped conversation settles it: no matching, no creating.
+    scoped_trip_id = state.get("conversation_trip_id")
+    if scoped_trip_id:
+        trip = await session.get(TripORM, scoped_trip_id)
+        if trip:
+            logger.info("persist | using the conversation's trip %s (%s)",
+                        trip.id[:8], trip.destination)
+            return trip.id
+        logger.warning("persist | conversation trip %s no longer exists — falling back "
+                       "to destination matching", str(scoped_trip_id)[:8])
+
     if not destination:
         logger.warning("persist | no destination in brief — cannot resolve trip, skipping persist")
         return None
@@ -223,6 +240,8 @@ async def _resolve_trip_id(state: PlanningState, session: AsyncSession) -> str |
             logger.info("persist | matched existing trip %s (%s)", trip.id[:8], trip.destination)
             return trip.id
 
+    logger.info("persist | no trip matches %r — creating one. If this is a duplicate, "
+                "the conversation was not scoped to a trip (B-13).", destination)
     trip = TripORM(
         id=str(uuid.uuid4()),
         destination=destination,

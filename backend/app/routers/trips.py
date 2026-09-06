@@ -1,11 +1,11 @@
 import uuid
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db import get_session
-from app.models.orm import TripORM
+from app.models.orm import ConversationORM, TripORM
 from app.models.trip import Trip, TripCreate, TripUpdate
 from app import memory
 from app import live_trip
@@ -93,5 +93,16 @@ async def delete_trip(trip_id: str, session: AsyncSession = Depends(get_session)
         memory.delete_saved_place(place.id)
     for entry in trip.journal_entries:
         memory.delete_journal_entry(entry.id)
+    # Unscope conversations about this trip rather than letting the FK dangle.
+    # `ondelete="SET NULL"` is declarative only: SQLite does not enforce foreign
+    # keys unless PRAGMA foreign_keys=ON, which this app does not set -- the other
+    # cascades here are ORM relationship cascades, not database ones. Deleting the
+    # trip must not delete the conversations about it, so they are cleared, not
+    # removed. See docs/trip-scoped-chats.md.
+    await session.execute(
+        update(ConversationORM)
+        .where(ConversationORM.trip_id == trip_id)
+        .values(trip_id=None)
+    )
     await session.delete(trip)
     await session.commit()

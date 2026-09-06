@@ -1,6 +1,6 @@
 # Trip-Scoped Chats — design
 
-**Status:** proposed, nothing built.
+**Status:** Stages 1–2 built 2026-09-05 (the B-13 fix). Stages 3–4 (UI) not built.
 **Phase:** not in the current phase list. Filed as a candidate alongside
 [Live Trip Mode](live-trip-mode.md) for the priority call.
 
@@ -127,8 +127,8 @@ a wrong guess would now be *persisted* rather than re-derived each turn. It may
 
 | Stage | Scope | Migration | Notes |
 |---|---|---|---|
-| **1** | `trip_id` column + migration; `POST /conversations` accepts it; returned in the API | Alembic | Inert on its own — nothing reads it yet |
-| **2** | `_resolve_trip_id` prefers the conversation's trip and never creates a duplicate when scoped | none | **The bug fix**; the highest-value stage |
+| **1** | `trip_id` column + migration; `POST /conversations` accepts it; `PATCH` sets/clears it; returned in the API | Alembic | **built 2026-09-05** |
+| **2** | `_resolve_trip_id` prefers the conversation's trip and never creates a duplicate when scoped | none | **built 2026-09-05** — the B-13 fix |
 | **3** | Trip picker on new chat, live trip preselected; change/clear in the chat header | none | The visible feature |
 | **4** | Trip badge + filter on the chats list; conversations on the trip page | none | Findability |
 

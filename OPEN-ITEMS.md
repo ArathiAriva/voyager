@@ -341,7 +341,7 @@ conservative calibration working as designed — over-merging silently loses a r
 trait, while a kept near-duplicate costs one retrieval slot. Worth revisiting under
 M-4 with more data, not retuning on one example.
 
-### B-13 — The planner can silently create a duplicate trip
+### ~~B-13 — The planner can silently create a duplicate trip~~ · **fixed 2026-09-05**
 
 `_resolve_trip_id` (`planning/graph.py:207`) matches the brief's destination
 against existing trips by fuzzy name and, when nothing matches, **creates a new
@@ -354,10 +354,25 @@ Scotia" case, so this is latent rather than frequent; the exposure is any
 phrasing the fuzzy match misses.
 
 Root cause is structural: conversations carry no `trip_id`, so the planner has
-nothing but the destination string to go on. The fix is Stage 2 of
-[docs/trip-scoped-chats.md](docs/trip-scoped-chats.md) — prefer the
-conversation's trip and never create one when the conversation is already
-scoped — which needs only that doc's Stage 1 column, not its UI.
+nothing but the destination string to go on.
+
+**Fixed** by Stages 1–2 of [docs/trip-scoped-chats.md](docs/trip-scoped-chats.md).
+`conversations.trip_id` (nullable, migration `b7e2a4c81f35`) is threaded to the
+graph as `conversation_trip_id`; `_resolve_trip_id` uses it directly and creates
+nothing. The destination-matching path is unchanged for unscoped conversations,
+which is still most of them, and a conversation scoped to a since-deleted trip
+degrades to that path rather than failing.
+
+Demonstrated both ways in `tests/test_trip_scoped_chats.py`: the same brief
+("Nova Scotia road trip" against a "Halifax, Nova Scotia" trip) creates a
+duplicate unscoped and resolves correctly scoped.
+
+**Found while testing:** `ondelete` is decorative in this schema — SQLite does not
+enforce foreign keys without `PRAGMA foreign_keys=ON`, which the app never sets,
+so the existing `CASCADE`s are ORM relationship cascades rather than database
+ones. Deleting a trip therefore left a dangling `conversations.trip_id`; the
+delete handler now clears it explicitly. Enabling the pragma globally would change
+behaviour for every existing cascade and was too broad to do as a side effect.
 
 **Severity:** medium — silent, user-visible, and it corrupts per-trip scoping for
 everything attached to the wrong trip afterwards.

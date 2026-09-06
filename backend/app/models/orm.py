@@ -83,6 +83,17 @@ class ConversationORM(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
     updated_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
 
+    # The trip this conversation is about, when the user has said which. NULL is a
+    # legitimate permanent state, not a missing value: plenty of conversations are
+    # general ("what is the best time to visit Japan?") or span every trip ("which
+    # was my most reflective trip?"). See docs/trip-scoped-chats.md.
+    #
+    # SET NULL rather than the CASCADE the other trip FKs use -- deleting a trip
+    # must not delete the conversations about it.
+    trip_id: Mapped[str | None] = mapped_column(
+        String, ForeignKey("trips.id", ondelete="SET NULL"), nullable=True
+    )
+
     # How far memory extraction has successfully written for this conversation.
     # Extraction is a background task: the LLM call and the Chroma write are
     # seconds apart, and anything that kills the process in between -- a deploy, a

@@ -11,8 +11,9 @@ from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db import get_session
-from app.models.orm import ConversationORM, MessageORM
-from app.models.conversation import Conversation, ConversationSummary, SendMessageRequest, Message
+from app.models.orm import ConversationORM, MessageORM, TripORM
+from app.models.conversation import (Conversation, ConversationCreate, ConversationSummary,
+                                     ConversationUpdate, SendMessageRequest, Message)
 from app.claude import get_client, get_model
 from app.tools import TOOL_SCHEMAS, execute_tool, find_live_trip
 from app.mcp_client import mcp_tool_schemas, call_mcp_tool
@@ -329,10 +330,43 @@ async def list_conversations(session: AsyncSession = Depends(get_session)) -> li
 
 
 @router.post("", response_model=ConversationSummary, status_code=201)
-async def create_conversation(session: AsyncSession = Depends(get_session)) -> ConversationSummary:
+async def create_conversation(
+    body: ConversationCreate | None = None,
+    session: AsyncSession = Depends(get_session),
+) -> ConversationSummary:
     now = datetime.now(timezone.utc)
-    conversation = ConversationORM(id=str(uuid.uuid4()), title="New conversation", created_at=now, updated_at=now)
+    trip_id = body.trip_id if body else None
+    if trip_id and await session.get(TripORM, trip_id) is None:
+        raise HTTPException(status_code=404, detail="Trip not found")
+    conversation = ConversationORM(
+        id=str(uuid.uuid4()), title="New conversation",
+        created_at=now, updated_at=now, trip_id=trip_id,
+    )
     session.add(conversation)
+    await session.commit()
+    await session.refresh(conversation)
+    return conversation
+
+
+@router.patch("/{conversation_id}", response_model=ConversationSummary)
+async def update_conversation(
+    conversation_id: str,
+    body: ConversationUpdate,
+    session: AsyncSession = Depends(get_session),
+) -> ConversationSummary:
+    """Set or clear the conversation's trip.
+
+    Conversations wander -- one starts as "best time to visit Japan" and becomes
+    "plan my Tokyo trip" -- so the scope has to be changeable, not fixed at
+    creation. An explicit null clears it.
+    """
+    conversation = await session.get(ConversationORM, conversation_id)
+    if not conversation:
+        raise HTTPException(status_code=404, detail="Conversation not found")
+    if body.trip_id and await session.get(TripORM, body.trip_id) is None:
+        raise HTTPException(status_code=404, detail="Trip not found")
+    conversation.trip_id = body.trip_id
+    conversation.updated_at = datetime.now(timezone.utc)
     await session.commit()
     await session.refresh(conversation)
     return conversation
@@ -422,6 +456,10 @@ async def send_message(
                     return await run_planning_graph(
                         body.content, session, emit_step=enqueue_step,
                         conversation_id=conversation_id,
+                        # B-13: when the user has scoped this chat to a trip, the
+                        # planner persists to that trip rather than matching on a
+                        # destination string and inventing a duplicate on a miss.
+                        conversation_trip_id=conversation.trip_id,
                     )
                 finally:
                     await step_queue.put(None)  # sentinel

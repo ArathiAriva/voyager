@@ -12,6 +12,10 @@ class PlanningState(TypedDict):
     # Input
     user_message: str
     trip_id: str | None  # resolved by Planner via get_trips
+    #: The trip the *conversation* is scoped to, when the user set one. Distinct
+    #: from `trip_id`: this is user intent, that is whatever the graph resolved.
+    #: Used at persist time to avoid inventing a duplicate trip (B-13).
+    conversation_trip_id: str | None
 
     # Execution mode
     revision_scope: RevisionScope

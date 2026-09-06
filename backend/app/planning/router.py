@@ -68,6 +68,7 @@ async def run_planning_graph(
     user_message: str,
     session: AsyncSession,
     trip_id: str | None = None,
+    conversation_trip_id: str | None = None,
     emit_step: StepEmitter | None = None,
     conversation_id: str | None = None,
 ) -> str:
@@ -75,6 +76,7 @@ async def run_planning_graph(
     initial_state: PlanningState = {
         "user_message": user_message,
         "trip_id": trip_id,
+        "conversation_trip_id": conversation_trip_id,
         "revision_scope": {"domains": [], "day_range": None, "instruction": ""},
         "user_preferences": [],
         "saved_places": [],

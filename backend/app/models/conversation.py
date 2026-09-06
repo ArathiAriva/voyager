@@ -18,6 +18,9 @@ class Conversation(BaseModel):
     title: str
     created_at: datetime
     updated_at: datetime
+    #: Trip this conversation is about, if the user has said. NULL is permanent
+    #: and legitimate -- see docs/trip-scoped-chats.md.
+    trip_id: str | None = None
     messages: list[Message] = []
 
     model_config = {"from_attributes": True}
@@ -28,8 +31,21 @@ class ConversationSummary(BaseModel):
     title: str
     created_at: datetime
     updated_at: datetime
+    trip_id: str | None = None
 
     model_config = {"from_attributes": True}
+
+
+class ConversationCreate(BaseModel):
+    """Optional trip scope at creation. Omitted or null means an unscoped chat."""
+
+    trip_id: str | None = None
+
+
+class ConversationUpdate(BaseModel):
+    """Set or clear a conversation's trip. Explicit null clears it."""
+
+    trip_id: str | None = None
 
 
 class SendMessageRequest(BaseModel):
