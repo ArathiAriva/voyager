@@ -88,6 +88,45 @@ class SavedPlaceORM(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
 
     trip: Mapped["TripORM"] = relationship("TripORM", back_populates="saved_places")
+    anecdotes: Mapped[list["PlaceAnecdoteORM"]] = relationship(
+        "PlaceAnecdoteORM", back_populates="place",
+        order_by="PlaceAnecdoteORM.created_at.desc()", cascade="all, delete-orphan",
+    )
+
+
+class PlaceAnecdoteORM(Base):
+    """The user's own words about a place they went.
+
+    A separate table rather than another column on `saved_places`, because
+    provenance has to stay clean: `notes` and `summary` there are agent- or
+    web-authored and treated as untrusted -- the safety suite plants injection
+    payloads in `notes` precisely because that text reaches the agent. An anecdote
+    is the user's voice, and mixing the two into one field would make it
+    impossible to tell them apart later. That is the mistake that made `semantic`
+    memory unusable before M-2 added `source`.
+
+    More than one per place is normal: you go twice, or note different things.
+
+    CASCADE is right here, unlike conversations in the trip-scoped design -- an
+    anecdote about a deleted place has no meaning on its own.
+
+    See docs/visited-places-and-anecdotes.md.
+    """
+
+    __tablename__ = "place_anecdotes"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True)
+    place_id: Mapped[str] = mapped_column(
+        String, ForeignKey("saved_places.id", ondelete="CASCADE"), nullable=False
+    )
+    #: Verbatim. The agent never authors or edits this -- see the design doc.
+    body: Mapped[str] = mapped_column(Text, nullable=False)
+    source: Mapped[str] = mapped_column(String, nullable=False, default="app")  # app | chat
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, nullable=False, default=lambda: datetime.now(timezone.utc)
+    )
+
+    place: Mapped["SavedPlaceORM"] = relationship("SavedPlaceORM", back_populates="anecdotes")
 
 
 class ConversationORM(Base):

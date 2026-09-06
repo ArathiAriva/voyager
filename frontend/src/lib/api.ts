@@ -351,6 +351,43 @@ export async function updatePlace(
   return res.json() as Promise<SavedPlace>;
 }
 
+export interface PlaceAnecdote {
+  id: string;
+  place_id: string;
+  body: string;
+  source: string;
+  created_at: string;
+}
+
+export async function fetchAnecdotes(tripId: string, placeId: string): Promise<PlaceAnecdote[]> {
+  const res = await fetch(`${BASE_URL}/api/trips/${tripId}/places/${placeId}/anecdotes`);
+  if (!res.ok) throw new Error(`Anecdotes API error: ${res.status}`);
+  return res.json() as Promise<PlaceAnecdote[]>;
+}
+
+export async function createAnecdote(
+  tripId: string, placeId: string, body: string,
+): Promise<PlaceAnecdote> {
+  const res = await fetch(`${BASE_URL}/api/trips/${tripId}/places/${placeId}/anecdotes`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    // Sent verbatim. The agent never authors or edits this text.
+    body: JSON.stringify({ body, source: "app" }),
+  });
+  if (!res.ok) throw new Error(`Create anecdote error: ${res.status}`);
+  return res.json() as Promise<PlaceAnecdote>;
+}
+
+export async function deleteAnecdote(
+  tripId: string, placeId: string, anecdoteId: string,
+): Promise<void> {
+  const res = await fetch(
+    `${BASE_URL}/api/trips/${tripId}/places/${placeId}/anecdotes/${anecdoteId}`,
+    { method: "DELETE" },
+  );
+  if (!res.ok) throw new Error(`Delete anecdote error: ${res.status}`);
+}
+
 export async function deletePlace(tripId: string, placeId: string): Promise<void> {
   const res = await fetch(`${BASE_URL}/api/trips/${tripId}/places/${placeId}`, { method: "DELETE" });
   if (!res.ok) throw new Error(`Delete place error: ${res.status}`);

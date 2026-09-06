@@ -13,8 +13,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.claude import get_client, get_model
 from app.db import SessionLocal, get_session
 from app import memory
-from app.models.orm import TripORM, SavedPlaceORM
-from app.models.trip import SavedPlace, SavedPlaceCreate, SavedPlaceUpdate, coerce_category
+from app.models.orm import TripORM, SavedPlaceORM, PlaceAnecdoteORM
+from app.models.trip import (PlaceAnecdote, PlaceAnecdoteCreate, SavedPlace,
+                             SavedPlaceCreate, SavedPlaceUpdate, coerce_category)
 from app.utils import fetch_og_metadata
 
 logger = logging.getLogger("voyager.places")
@@ -217,6 +218,80 @@ async def update_place(
                              place.category, embed_text, visited=place.visited)
 
     return place
+
+
+@router.get("/{place_id}/anecdotes", response_model=list[PlaceAnecdote])
+async def list_anecdotes(
+    trip_id: str,
+    place_id: str,
+    session: AsyncSession = Depends(get_session),
+) -> list[PlaceAnecdote]:
+    await _get_trip_or_404(trip_id, session)
+    result = await session.execute(
+        select(PlaceAnecdoteORM)
+        .where(PlaceAnecdoteORM.place_id == place_id)
+        .order_by(PlaceAnecdoteORM.created_at.desc())
+    )
+    return result.scalars().all()
+
+
+@router.post("/{place_id}/anecdotes", response_model=PlaceAnecdote, status_code=201)
+async def create_anecdote(
+    trip_id: str,
+    place_id: str,
+    body: PlaceAnecdoteCreate,
+    session: AsyncSession = Depends(get_session),
+) -> PlaceAnecdote:
+    """Store the user's own note about a place, verbatim.
+
+    The text is written exactly as given. Anecdotes are retrieved into future
+    recommendations, so an agent-tidied one would feed the model's own register
+    back to itself as the user's experience -- see docs/visited-places-and-anecdotes.md.
+    """
+    trip = await _get_trip_or_404(trip_id, session)
+    place = await session.get(SavedPlaceORM, place_id)
+    if not place or place.trip_id != trip_id:
+        raise HTTPException(status_code=404, detail="Place not found")
+    text = body.body.strip()
+    if not text:
+        raise HTTPException(status_code=422, detail="An anecdote cannot be empty")
+
+    anecdote = PlaceAnecdoteORM(
+        id=str(uuid.uuid4()), place_id=place_id, body=text, source=body.source,
+        created_at=datetime.now(timezone.utc),
+    )
+    session.add(anecdote)
+    # Writing about a place is evidence of having been there. Marking it visited
+    # is the inference the user would otherwise have to make twice.
+    if not place.visited:
+        place.visited = True
+    await session.commit()
+    await session.refresh(anecdote)
+    await session.refresh(place)
+
+    memory.store_anecdote(anecdote.id, place_id, trip_id, trip.destination,
+                          place.name, text)
+    embed_text = place.summary or place.notes or place.name
+    memory.store_saved_place(place.id, trip_id, trip.destination, place.name,
+                             place.category, embed_text, visited=place.visited)
+    logger.info("places | anecdote %s added to place=%s", anecdote.id[:8], place_id[:8])
+    return anecdote
+
+
+@router.delete("/{place_id}/anecdotes/{anecdote_id}", status_code=204)
+async def delete_anecdote(
+    trip_id: str,
+    place_id: str,
+    anecdote_id: str,
+    session: AsyncSession = Depends(get_session),
+) -> None:
+    await _get_trip_or_404(trip_id, session)
+    anecdote = await session.get(PlaceAnecdoteORM, anecdote_id)
+    if not anecdote or anecdote.place_id != place_id:
+        raise HTTPException(status_code=404, detail="Anecdote not found")
+    await session.delete(anecdote)
+    await session.commit()
+    memory.delete_anecdote(anecdote_id)
 
 
 @router.delete("/{place_id}", status_code=204)

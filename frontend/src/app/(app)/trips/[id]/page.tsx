@@ -15,8 +15,9 @@ import {
   fetchTrip, fetchJournalEntries, createJournalEntry, deleteJournalEntry,
   fetchContent, addContent, deleteContent, updateTrip,
   fetchPlaces, createPlace, deletePlace, updatePlace,
+  fetchAnecdotes, createAnecdote, deleteAnecdote,
   type Trip, type JournalEntry, type ConnectedContent, type TripUpdate, type ItineraryDay,
-  type SavedPlace, type PlaceCategory, PLACE_CATEGORIES,
+  type SavedPlace, type PlaceCategory, type PlaceAnecdote, PLACE_CATEGORIES,
 } from "@/lib/api";
 
 type Tab = "journal" | "itinerary" | "places" | "content";
@@ -107,6 +108,9 @@ export default function TripDetailPage() {
   const [savingPlace, setSavingPlace] = useState(false);
   const [deletingPlaceId, setDeletingPlaceId] = useState<string | null>(null);
   const [selectedPlace, setSelectedPlace] = useState<SavedPlace | null>(null);
+  const [anecdotes, setAnecdotes] = useState<PlaceAnecdote[]>([]);
+  const [anecdoteDraft, setAnecdoteDraft] = useState("");
+  const [savingAnecdote, setSavingAnecdote] = useState(false);
 
   useEffect(() => {
     Promise.all([fetchTrip(id), fetchJournalEntries(id), fetchContent(id), fetchPlaces(id)])
@@ -228,6 +232,44 @@ export default function TripDetailPage() {
       setError("Failed to save place.");
     } finally {
       setSavingPlace(false);
+    }
+  }
+
+  async function loadAnecdotes(placeId: string) {
+    try {
+      setAnecdotes(await fetchAnecdotes(id, placeId));
+    } catch {
+      setAnecdotes([]);
+    }
+  }
+
+  async function handleAddAnecdote() {
+    if (!selectedPlace || !anecdoteDraft.trim()) return;
+    setSavingAnecdote(true);
+    try {
+      // Sent exactly as typed. Anecdotes are retrieved into future
+      // recommendations, so nothing may rewrite the user's wording.
+      const created = await createAnecdote(id, selectedPlace.id, anecdoteDraft.trim());
+      setAnecdotes((prev) => [created, ...prev]);
+      setAnecdoteDraft("");
+      // The server marks the place visited on the first anecdote -- writing about
+      // somewhere is evidence of having been there.
+      setPlaces((prev) => prev.map((p) => (p.id === selectedPlace.id ? { ...p, visited: true } : p)));
+      setSelectedPlace((prev) => (prev ? { ...prev, visited: true } : prev));
+    } catch {
+      setError("Couldn't save that note.");
+    } finally {
+      setSavingAnecdote(false);
+    }
+  }
+
+  async function handleDeleteAnecdote(anecdoteId: string) {
+    if (!selectedPlace) return;
+    try {
+      await deleteAnecdote(id, selectedPlace.id, anecdoteId);
+      setAnecdotes((prev) => prev.filter((a) => a.id !== anecdoteId));
+    } catch {
+      setError("Couldn't remove that note.");
     }
   }
 
@@ -755,7 +797,7 @@ export default function TripDetailPage() {
                   cursor="pointer"
                   _hover={{ boxShadow: "md", borderColor: "blue.400" }}
                   transition="all 0.15s"
-                  onClick={() => setSelectedPlace(place)}
+                  onClick={() => { setSelectedPlace(place); setAnecdoteDraft(""); loadAnecdotes(place.id); }}
                 >
                   {place.thumbnail_url ? (
                     // eslint-disable-next-line @next/next/no-img-element
@@ -1050,6 +1092,50 @@ export default function TripDetailPage() {
                     <Text fontSize="sm" color="text.dim" fontStyle="italic" lineHeight="tall">{selectedPlace.notes}</Text>
                   </Box>
                 )}
+                {/* The user's own words, kept visually distinct from the
+                    agent-written description above. */}
+                <Box borderTop="1px solid" borderColor="border.default" pt={3} mb={3}>
+                  <Text fontSize="xs" fontWeight="700" color="text.secondary"
+                        textTransform="uppercase" letterSpacing="0.06em" mb={2}>
+                    Your notes
+                  </Text>
+                  <VStack align="stretch" gap={2} mb={3}>
+                    {anecdotes.map((a) => (
+                      <HStack key={a.id} align="start" gap={2}
+                              bg="bg.subtle" borderRadius="lg" px={3} py={2}>
+                        <Text fontSize="sm" color="text.dim" lineHeight="tall" flex={1}>
+                          {a.body}
+                        </Text>
+                        <Button size="xs" variant="ghost" color="text.dim"
+                                _hover={{ color: "red.400" }}
+                                onClick={() => handleDeleteAnecdote(a.id)}
+                                aria-label="Remove note">
+                          <CloseIcon size={12} />
+                        </Button>
+                      </HStack>
+                    ))}
+                    {anecdotes.length === 0 && (
+                      <Text fontSize="xs" color="text.secondary">
+                        Nothing yet — add what you thought of it.
+                      </Text>
+                    )}
+                  </VStack>
+                  <Textarea
+                    value={anecdoteDraft}
+                    onChange={(e) => setAnecdoteDraft(e.target.value)}
+                    placeholder="What was it like? Saved in your words, exactly as written."
+                    size="sm"
+                    rows={2}
+                    mb={2}
+                  />
+                  <Button size="xs" colorPalette="blue" variant="outline"
+                          loading={savingAnecdote}
+                          disabled={!anecdoteDraft.trim()}
+                          onClick={handleAddAnecdote}>
+                    Add note
+                  </Button>
+                </Box>
+
                 <HStack justify="space-between" pt={1}>
                   <Button
                     size="sm"

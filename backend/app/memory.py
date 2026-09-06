@@ -55,6 +55,11 @@ _MAX_DISTANCE_BY_COLLECTION = {
     "episodic": 1.30,
     "journals": 1.45,
     "saved_places": 1.75,
+    # Anecdotes are user-written sentences ("the queue was 40 minutes but the
+    # mosaics were worth it"), so they sit in the same distance regime as
+    # preferences and episodes rather than the short-noun-phrase regime of
+    # saved_places.
+    "anecdotes": 1.30,
 }
 
 
@@ -329,6 +334,101 @@ def search_journals(query: str, trip_id: str | None = None, n_results: int = 5) 
                      distances=kept_distances,
                      latency_ms=latency_ms, filters=filters)
     logger.info("memory | journal search '%s' → %d hits", query[:40], len(hits))
+    return hits
+
+
+def _anecdotes() -> chromadb.Collection:
+    return _get_client().get_or_create_collection("anecdotes")
+
+
+def store_anecdote(
+    anecdote_id: str, place_id: str, trip_id: str, destination: str,
+    place_name: str, body: str,
+) -> None:
+    """Embed a user's anecdote about a place.
+
+    Its own collection rather than being folded into the place's `embed_text`
+    (currently `summary or notes or name`). "What this place is" and "what happened
+    to me there" are different questions, and appending one to the other blurs
+    both. Keeping them apart also lets anecdotes outrank scraped descriptions at
+    retrieval time, which is the point -- first-hand experience beats a summary.
+    """
+    _anecdotes().upsert(
+        ids=[anecdote_id],
+        documents=[body],
+        metadatas=[{"place_id": place_id, "trip_id": trip_id,
+                    "destination": destination, "place_name": place_name}],
+    )
+    logger.info("memory | anecdote embedded: id=%s place=%s", anecdote_id[:8], place_id[:8])
+
+
+def delete_anecdote(anecdote_id: str) -> None:
+    try:
+        _anecdotes().delete(ids=[anecdote_id])
+        logger.info("memory | anecdote removed: id=%s", anecdote_id[:8])
+    except Exception:
+        logger.warning("memory | could not delete anecdote %s (may not exist)", anecdote_id[:8])
+
+
+def search_anecdotes(
+    query: str,
+    destination: str | None = None,
+    trip_id: str | None = None,
+    n_results: int = 5,
+) -> list[dict]:
+    """Semantic search over the user's own notes about places they went.
+
+    Destination scoping is post-query and fuzzy, the same as `search_saved_places`
+    and for the same reason (B-6): Chroma's `where` cannot express "Rome" ~ "Rome,
+    Italy", so the search over-fetches and filters after.
+    """
+    collection = _anecdotes()
+    count = collection.count()
+    filters = {"trip_id": trip_id, "destination": destination}
+    if count == 0:
+        retrieval.record(collection="anecdotes", query=query, n_requested=n_results,
+                         result_ids=[], distances=[], latency_ms=0.0, filters=filters)
+        return []
+
+    where = {"trip_id": trip_id} if trip_id else {}
+    fetch = min(count, n_results * 5 if destination else n_results)
+    kwargs: dict = {"query_texts": [query], "n_results": fetch}
+    if where:
+        kwargs["where"] = where
+
+    started = time.perf_counter()
+    results = collection.query(**kwargs)
+    latency_ms = (time.perf_counter() - started) * 1000
+
+    hits: list[dict] = []
+    kept: list[float] = []
+    if results["documents"]:
+        raw_distances = results["distances"][0] if results.get("distances") else []
+        for idx, (doc, meta, cid) in enumerate(zip(
+            results["documents"][0], results["metadatas"][0], results["ids"][0],  # type: ignore[index]
+        )):
+            place_dest = meta.get("destination", "")
+            if destination and not dest_matches(destination, place_dest):
+                continue
+            distance = raw_distances[idx] if idx < len(raw_distances) else None
+            if distance is not None and distance > _max_distance("anecdotes"):
+                continue
+            hits.append({
+                "anecdote_id": cid,
+                "place_id": meta.get("place_id", ""),
+                "place_name": meta.get("place_name", ""),
+                "destination": place_dest,
+                "text": doc,
+            })
+            if distance is not None:
+                kept.append(distance)
+            if len(hits) >= n_results:
+                break
+
+    retrieval.record(collection="anecdotes", query=query, n_requested=n_results,
+                     result_ids=[h["anecdote_id"] for h in hits], distances=kept,
+                     latency_ms=latency_ms, filters=filters)
+    logger.info("memory | anecdote search '%s' → %d hits", query[:40], len(hits))
     return hits
 
 

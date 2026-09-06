@@ -290,6 +290,30 @@ TOOL_SCHEMAS = [
     {
         "type": "function",
         "function": {
+            "name": "search_anecdotes",
+            "description": (
+                "Search the user's own notes about places they actually went — their "
+                "words, not a description of the place. Use this when recommending "
+                "somewhere they may have been before, when they ask what they thought "
+                "of somewhere, or when planning a return trip. Prefer this over "
+                "search_places for first-hand experience: an anecdote is what happened "
+                "to them, a saved place is what the place is. Pass `destination` when "
+                "working on a specific city."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string", "description": "What to look for, e.g. 'what did they think of the carbonara'."},
+                    "destination": {"type": "string", "description": "Optional: restrict to one destination, e.g. 'Rome'."},
+                    "trip_id": {"type": "string", "description": "Optional: restrict to one trip."},
+                },
+                "required": ["query"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "get_current_trip",
             "description": (
                 "Check whether the user is on a trip right now, and if so which day they are on "
@@ -589,6 +613,24 @@ async def find_live_trip(session: AsyncSession) -> dict | None:
     }
 
 
+async def _execute_search_anecdotes(args: dict, session: AsyncSession) -> str:
+    hits = memory.search_anecdotes(
+        (args.get("query") or "").strip() or "notes about places",
+        destination=args.get("destination"),
+        trip_id=args.get("trip_id"),
+    )
+    if not hits:
+        return json.dumps({"message": "No notes found from the user about places they visited."})
+    return json.dumps({
+        "results": [
+            {"place": h["place_name"], "destination": h["destination"], "note": h["text"]}
+            for h in hits
+        ],
+        "note": "These are the user's own words about places they went. Quote or "
+                "paraphrase them as the user's experience, not as fact about the place.",
+    })
+
+
 async def _execute_get_current_trip(args: dict, session: AsyncSession) -> str:
     live = await find_live_trip(session)
     if live is None:
@@ -633,6 +675,7 @@ TOOL_EXECUTORS = {
     "get_trips": _execute_get_trips,
     "search_journal": _execute_search_journal,
     "search_memory": _execute_search_memory,
+    "search_anecdotes": _execute_search_anecdotes,
     "get_current_trip": _execute_get_current_trip,
 }
 

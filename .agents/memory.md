@@ -10,6 +10,7 @@ All vector storage is [Chroma](https://www.trychroma.com/), local, persisted to 
 | `semantic` | Distilled user preferences ("prefers boutique hotels"); deterministic-hash IDs dedupe identical text; metadata carries `created_at`, `source`, and `destination` when known | Post-reply background extraction, journal extraction | `search_memory` tool, planner context gathering |
 | `journals` | Full journal entries, auto-indexed on write, per trip | Journal router on entry create/update | `search_journal` tool |
 | `saved_places` | Saved-place embeddings; metadata carries `trip_id`, `destination`, `name`, `category` | Places router / `save_place` tool | `search_places` tool |
+| `anecdotes` | The user's own words about a place they went, verbatim; metadata carries `place_id`, `trip_id`, `destination`, `place_name` | Places router on anecdote create | `search_anecdotes` tool |
 
 ## Extraction pipeline
 

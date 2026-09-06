@@ -186,6 +186,23 @@ class SavedPlaceUpdate(BaseModel):
     visited_at: str | None = None
 
 
+class PlaceAnecdoteCreate(BaseModel):
+    """The user's own words. Stored verbatim -- never rewritten by the agent."""
+
+    body: str
+    source: Literal["app", "chat"] = "app"
+
+
+class PlaceAnecdote(BaseModel):
+    id: str
+    place_id: str
+    body: str
+    source: str
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
 class SavedPlace(SavedPlaceBase):
     id: str
     trip_id: str

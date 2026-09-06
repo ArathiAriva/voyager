@@ -73,6 +73,17 @@ call, not just the one that sets it, since PATCH re-embeds the place. A boolean
 rather than a status enum: "planned / visited / skipped" invites a third state
 nobody maintains. See [docs/visited-places-and-anecdotes.md](../docs/visited-places-and-anecdotes.md).
 
+**Place anecdotes are the user's own words.** `place_anecdotes` (migration
+`d3f7b26c410a`) is a separate table, not another column on `saved_places`, because
+`notes`/`summary` there are agent- or web-authored and treated as untrusted — the
+safety suite plants injection payloads in `notes`. Mixing the two would make them
+indistinguishable later, the mistake M-2's `source` had to undo for semantic
+memory. Anecdotes embed into their own `anecdotes` Chroma collection rather than
+the place's `embed_text`: "what this place is" and "what happened to me there" are
+different queries. **The agent never authors or edits anecdote text** — they are
+retrieved into future recommendations, so a tidied one would feed the model's own
+register back as the user's experience. Writing one marks the place visited.
+
 **Conversations can be scoped to a trip.** `conversations.trip_id` (nullable) is set
 at creation (`POST /api/conversations {"trip_id": ...}`) or later
 (`PATCH /api/conversations/{id}`), and threaded to the planning graph as

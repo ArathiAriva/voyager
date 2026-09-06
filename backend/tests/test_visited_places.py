@@ -135,3 +135,140 @@ async def test_search_places_tool_exposes_the_filter(client):
             "search_places", {"query": "Roman pasta", "destination": "Rome", "visited": True}, session))
         break
     assert any(r["name"] == "Roscioli" for r in result.get("results", []))
+
+
+# ── Anecdotes (Stages 2-3) ──────────────────────────────────────────────────
+
+@pytest.fixture(autouse=True)
+def isolated_anecdotes(monkeypatch):
+    import chromadb
+    import app.memory as mem
+
+    client = chromadb.EphemeralClient()
+    try:
+        client.delete_collection("anecdotes_test")
+    except Exception:
+        pass
+    collection = client.get_or_create_collection("anecdotes_test")
+    monkeypatch.setattr(mem, "_anecdotes", lambda: collection)
+    return collection
+
+
+async def _place(client, trip_id: str, name: str = "Roscioli") -> dict:
+    resp = await client.post(f"/api/trips/{trip_id}/places", json={
+        "name": name, "category": "restaurant", "notes": f"{name} near Campo de' Fiori"})
+    return resp.json()
+
+
+@pytest.mark.asyncio
+async def test_anecdote_is_stored_verbatim(client):
+    """The agent never authors or edits this text. Anecdotes are retrieved into
+    future recommendations, so a tidied one would feed the model's own register
+    back to itself as the user's experience."""
+    trip_id = await _trip(client)
+    place = await _place(client, trip_id)
+
+    words = "The queue was 40 minutes but the carbonara was worth it."
+    created = (await client.post(
+        f"/api/trips/{trip_id}/places/{place['id']}/anecdotes", json={"body": words})).json()
+
+    assert created["body"] == words, "stored exactly as written"
+    assert created["source"] == "app"
+
+
+@pytest.mark.asyncio
+async def test_writing_an_anecdote_marks_the_place_visited(client):
+    """Writing about somewhere is evidence of having been there -- the user should
+    not have to state it twice."""
+    trip_id = await _trip(client)
+    place = await _place(client, trip_id)
+    assert place["visited"] is False
+
+    await client.post(f"/api/trips/{trip_id}/places/{place['id']}/anecdotes",
+                      json={"body": "Great pasta."})
+
+    places = (await client.get(f"/api/trips/{trip_id}/places")).json()
+    assert places[0]["visited"] is True
+
+
+@pytest.mark.asyncio
+async def test_a_place_can_hold_several_anecdotes(client):
+    """You go twice, or note different things."""
+    trip_id = await _trip(client)
+    place = await _place(client, trip_id)
+
+    for text in ("First visit: worth the queue.", "Second visit: quieter on a Tuesday."):
+        await client.post(f"/api/trips/{trip_id}/places/{place['id']}/anecdotes",
+                          json={"body": text})
+
+    listed = (await client.get(f"/api/trips/{trip_id}/places/{place['id']}/anecdotes")).json()
+    assert len(listed) == 2
+
+
+@pytest.mark.asyncio
+async def test_empty_anecdotes_are_rejected(client):
+    trip_id = await _trip(client)
+    place = await _place(client, trip_id)
+
+    resp = await client.post(f"/api/trips/{trip_id}/places/{place['id']}/anecdotes",
+                             json={"body": "   "})
+    assert resp.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_anecdotes_retrieve_separately_from_place_descriptions(client):
+    """Kept in their own collection rather than appended to the place's embed_text.
+    "What this place is" and "what happened to me there" are different questions,
+    and blurring them would degrade both."""
+    from app import memory
+
+    trip_id = await _trip(client)
+    place = await _place(client, trip_id)
+    await client.post(f"/api/trips/{trip_id}/places/{place['id']}/anecdotes",
+                      json={"body": "The queue was 40 minutes but the carbonara was worth it."})
+
+    experience = memory.search_anecdotes("what did they think of the carbonara",
+                                         destination="Rome")
+    assert [h["place_name"] for h in experience] == ["Roscioli"]
+
+    description = memory.search_saved_places("deli near Campo de Fiori", destination="Rome")
+    assert [h["name"] for h in description] == ["Roscioli"], "place search still works"
+
+
+@pytest.mark.asyncio
+async def test_deleting_an_anecdote_removes_its_embedding(client):
+    from app import memory
+
+    trip_id = await _trip(client)
+    place = await _place(client, trip_id)
+    created = (await client.post(
+        f"/api/trips/{trip_id}/places/{place['id']}/anecdotes",
+        json={"body": "The queue was 40 minutes but the carbonara was worth it."})).json()
+
+    resp = await client.delete(
+        f"/api/trips/{trip_id}/places/{place['id']}/anecdotes/{created['id']}")
+    assert resp.status_code == 204
+
+    assert memory.search_anecdotes("carbonara", destination="Rome") == []
+
+
+@pytest.mark.asyncio
+async def test_search_anecdotes_tool_frames_them_as_the_users_words(client):
+    """The tool result has to say whose words these are, or the model will report
+    them as fact about the place."""
+    import json
+    from app.tools import execute_tool
+    from app.db import get_session
+
+    trip_id = await _trip(client)
+    place = await _place(client, trip_id)
+    await client.post(f"/api/trips/{trip_id}/places/{place['id']}/anecdotes",
+                      json={"body": "The queue was 40 minutes but the carbonara was worth it."})
+
+    async for session in get_session():
+        result = json.loads(await execute_tool(
+            "search_anecdotes", {"query": "carbonara", "destination": "Rome"}, session))
+        break
+
+    assert result["results"][0]["place"] == "Roscioli"
+    assert "user's own words" in result["note"]
