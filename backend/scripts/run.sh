@@ -7,8 +7,8 @@ usage() {
   echo "Usage: $0 --profile <name> [--port <port>] [--planner single|multi]"
   echo ""
   echo "  --planner  Which architecture handles planning-intent messages."
-  echo "             multi (default) = LangGraph multi-agent graph"
-  echo "             single          = single-agent tool-call loop"
+  echo "             multi           = LangGraph multi-agent graph"
+  echo "             single (default) = single-agent tool-call loop"
   echo "             Overrides VOYAGER_PLANNER from the profile/env."
   echo ""
   echo "Available profiles:"
@@ -71,6 +71,6 @@ if [[ -n "$EXISTING_PIDS" ]]; then
   echo "$EXISTING_PIDS" | xargs kill
 fi
 
-echo "Starting Voyager backend with profile: $PROFILE on port $PORT (planner: ${VOYAGER_PLANNER:-multi})"
+echo "Starting Voyager backend with profile: $PROFILE on port $PORT (planner: ${VOYAGER_PLANNER:-single})"
 cd "$(dirname "$0")/.."
 exec uvicorn app.main:app --reload --port "$PORT"

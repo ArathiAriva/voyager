@@ -4,6 +4,7 @@ Planning graph router — detects planning intent and invokes the LangGraph grap
 
 import itertools
 import logging
+import os
 import re
 import time
 from collections.abc import Callable, Coroutine
@@ -13,6 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.planning import trace as planning_trace
 from app.planning.graph import planning_graph
 from app.planning.state import PlanningState
+from app import jev
 
 logger = logging.getLogger("voyager.planning.router")
 
@@ -62,6 +64,15 @@ def is_planning_request(text: str) -> bool:
     if any(phrase in lower for phrase in _PLANNING_PHRASES + _REVISION_PHRASES):
         return True
     return bool(_DAY_REFERENCE.search(lower) and _EDIT_VERB.search(lower))
+
+
+async def is_planning_request_with_jev(text: str) -> bool:
+    """Use Jev for requests the local matcher cannot confidently classify."""
+    if is_planning_request(text) or not jev.jev_enabled():
+        return is_planning_request(text)
+    planning, confidence = await jev.classify_planning_intent(text)
+    threshold = float(os.environ.get("JEV_PLANNING_THRESHOLD", "0.80"))
+    return planning and confidence >= threshold
 
 
 async def run_planning_graph(

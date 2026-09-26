@@ -962,6 +962,33 @@ def test_unknown_database_url_is_allowed():
 # ── Extraction durability (B-14) ────────────────────────────────────────────
 
 @pytest.mark.asyncio
+async def test_extraction_vets_preferences_before_storing():
+    """Jev is a retention filter, not a replacement for the extraction LLM."""
+    from unittest.mock import MagicMock, patch
+    from app.routers import conversations as conv
+
+    async def ok(*args, **kwargs):
+        message = MagicMock()
+        message.content = ('{"episode": "Discussed Kyoto", "preferences": '
+                           '["prefers quiet hotels", "visiting Kyoto in April"]}')
+        choice = MagicMock(message=message)
+        return MagicMock(choices=[choice])
+
+    async def filter_preferences(preferences):
+        assert preferences == ["prefers quiet hotels", "visiting Kyoto in April"]
+        return ["prefers quiet hotels"]
+
+    client = MagicMock(chat=MagicMock(completions=MagicMock(create=ok)))
+    with patch.object(conv, "get_client", return_value=client), \
+         patch.object(conv.jev, "filter_durable_preferences", side_effect=filter_preferences), \
+         patch("app.memory.store_episode"), \
+         patch("app.memory.store_preferences") as store_preferences, \
+         patch.object(conv, "_set_extraction_watermark"):
+        await conv._run_extraction("abc12345", [{"role": "user", "content": "hello"}])
+
+    store_preferences.assert_called_once_with(["prefers quiet hotels"], source="conversation")
+
+@pytest.mark.asyncio
 async def test_cancelled_extraction_is_logged_and_leaves_no_watermark():
     """B-14: `except Exception` does not catch CancelledError (a BaseException since
     3.8), so a process teardown between the LLM call and the Chroma write lost the

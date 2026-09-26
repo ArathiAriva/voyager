@@ -139,6 +139,11 @@ Revision messages (`find cheaper restaurants`, `redo the accommodation`) re-run 
 |----------|----------|---------|-------------|
 | `OPENROUTER_API_KEY` | Yes | — | OpenRouter API key |
 | `OPENROUTER_MODEL` | No | `anthropic/claude-haiku-4-5` | Any OpenRouter model string |
+| `JEV_ENABLED` | No | `0` | Enables Jev planning-intent classification and extracted-preference filtering |
+| `JEV_MODEL` | No | `typesafe/jev-1.13` | Jev model ID used through OpenRouter's Decisions API |
+| `JEV_PLANNING_THRESHOLD` | No | `0.80` | Minimum Jev confidence required to route a message to the planning graph |
+| `JEV_MEMORY_FILTER_ENABLED` | No | `1` | When Jev is enabled, vets extracted preferences before storing them in memory |
+| `JEV_MEMORY_PREFERENCE_THRESHOLD` | No | `0.80` | Minimum Jev confidence required to retain an extracted preference |
 | `DATABASE_URL` | No | `sqlite+aiosqlite:///./voyager.db` | SQLite path (set by run.sh) |
 | `CHROMA_PATH` | No | `./chroma_db` | Chroma persistence directory (set by run.sh) |
 

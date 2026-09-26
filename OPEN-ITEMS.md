@@ -14,17 +14,14 @@ Severity is about consequence if left alone, not effort to fix.
 
 ## Priority right now
 
-> **Safety-eval work is paused (2026-09-03).** Voyager is first an AI-engineering /
-> LLM-app project; safety evals resume once the core product flow feels natural. The
-> suite, its results, and `SAFETY-LEDGER.md` stay as they are — this is a pause, not a
-> rollback, and nothing below deletes prior work. **S-1b, S-3, S-4, S-5, S-9, S-10 are
-> parked**; don't pick them up without the user saying so.
+> **Safety-eval work is paused (2026-09-03).** The suite, its results, and
+> `SAFETY-LEDGER.md` stay as they are — this is a pause, not a rollback. Resume it when
+> it is the chosen experiment or product priority; nothing below deletes prior work.
 >
 > S-13 is *not* parked — it calibrates the **quality** judge, which gates per-node model
 > decisions and belongs to the product track.
 
-1. **Deploying for a real trip (2026-09-06).** A Halifax trip on **Sept 18–21** is the
-   driver, which pulls some Month 6 work forward. Done: the shared-token lock
+1. **Operational hardening.** Done: the shared-token lock
    (`app/auth.py`). Remaining, in order: **mobile layout** (the sidebar defaults to
    288px of a 390px screen — two small fixes, not the half-day first estimated),
    **Dockerfile** with the 166 MB Chroma model baked in, **persistent volume** (SQLite
@@ -32,7 +29,7 @@ Severity is about consequence if left alone, not effort to fix.
    Access in front.
 
    **Back up `backend/data/` and `backend/chroma_*/` first.** Both are gitignored and
-   untracked, so the Halifax trip exists only on the dev machine.
+   untracked, so the local app data exists only on the dev machine.
 
    Backend suite: **253 passed** (was 73 when this list was written).
 2. **S-13 — calibrate the quality judge.** Scaffolding built 2026-09-05
@@ -52,7 +49,7 @@ Severity is about consequence if left alone, not effort to fix.
    **The instrumentation has 30 rows** (checked 2026-09-06, all in `moiraine`) — but
    almost all are from *my own testing*, not real usage, so the query distribution is
    still synthetic. Labelling against it would encode test queries as the golden set.
-   Real traffic is what unblocks this, which the Halifax trip should produce.
+   Real usage is what unblocks this.
    Exercising the chat→trip→itinerary flow populates `retrieval_log` first, and the
    golden set then writes itself from real queries. Those 3 rows are also what
    motivated M-9 and M-10 — one real logged query was enough to expose both bugs,
@@ -101,7 +98,7 @@ default). Applied to `egwene` — 12/12 entries now have an episode and surface 
 
 `backend/data/` and `backend/chroma_*/` are gitignored and untracked, so every trip,
 itinerary, saved place, journal entry and preference lives on one laptop — whose
-screen is dead. The Halifax trip being deployed *for* is in there.
+screen is dead. Any local app data on it is at risk.
 
 Backing it up costs nothing and is independent of deployment. ~11 MB of SQLite plus
 ~6.6 MB of Chroma per active profile.
@@ -395,8 +392,8 @@ trip**. There is no failure branch and no warning — the user's first sight of 
 is a second card on the trips page.
 
 Same class as B-10 (`create_trip` not idempotent), but on a path the user never
-explicitly invokes. `dest_matches` covers the common "Halifax" vs "Halifax, Nova
-Scotia" case, so this is latent rather than frequent; the exposure is any
+explicitly invokes. `dest_matches` covers the common "Kyoto" vs "Kyoto, Japan"
+case, so this is latent rather than frequent; the exposure is any
 phrasing the fuzzy match misses.
 
 Root cause is structural: conversations carry no `trip_id`, so the planner has
@@ -410,7 +407,7 @@ which is still most of them, and a conversation scoped to a since-deleted trip
 degrades to that path rather than failing.
 
 Demonstrated both ways in `tests/test_trip_scoped_chats.py`: the same brief
-("Nova Scotia road trip" against a "Halifax, Nova Scotia" trip) creates a
+("Kyoto trip" against a "Kyoto, Japan" trip) creates a
 duplicate unscoped and resolves correctly scoped.
 
 **Found while testing:** `ondelete` is decorative in this schema — SQLite does not
@@ -754,7 +751,7 @@ climbs meaningfully as a share of spend — both checkable from `usage_log`.
 ---
 
 **The trigger fired on 2026-09-04, first real session on the reset `moiraine`
-profile.** A single Halifax planning conversation ran to **20 messages (10 user
+profile.** A single long planning conversation ran to **20 messages (10 user
 turns)** — 5× the previous observed maximum of 4, and well past the ~8 threshold
 named above. `usage_log` shows the quadratic growth plainly: the ten
 `memory_extraction` calls sent 499, 402, 726, 1141, 1392, 1627, 1908, 2275,

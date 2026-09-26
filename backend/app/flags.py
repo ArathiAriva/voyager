@@ -1,8 +1,8 @@
 """Feature flags.
 
 PLANNER — which planning architecture handles planning-intent messages:
-  "multi"  (default) — LangGraph multi-agent planning graph
-  "single"           — legacy single-agent tool-call loop
+  "multi"            — LangGraph multi-agent planning graph
+  "single" (default) — legacy single-agent tool-call loop
 
 Resolution order: per-request override > VOYAGER_PLANNER env > default.
 The per-request override exists so the eval harness (and, later, the UI)
@@ -20,7 +20,7 @@ logger = logging.getLogger("voyager.flags")
 PlannerMode = Literal["single", "multi"]
 
 _VALID: tuple[PlannerMode, ...] = ("single", "multi")
-DEFAULT_PLANNER: PlannerMode = "multi"
+DEFAULT_PLANNER: PlannerMode = "single"
 
 
 def resolve_planner(override: str | None = None) -> PlannerMode:

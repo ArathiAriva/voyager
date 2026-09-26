@@ -48,7 +48,7 @@ problem and discards most of the collection whenever the destination changes.
 
 M-5 was nearly deferred on the grounds that "moiraine's 9 preferences contain
 nothing destination-bound, so there is nothing for a scope filter to exclude." That
-reasoning was wrong: those 9 rows describe **one travel mode** (solo, Halifax), so
+reasoning was wrong: those 9 rows describe **one travel mode** (solo city trip), so
 the absence of conflict is an artifact of thin data, not evidence of no problem.
 The same trap M-4's premise fell into — reasoning from a sample that could not
 contain the phenomenon.

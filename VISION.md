@@ -2,7 +2,13 @@
 
 ## Vision
 
-Voyager is an AI-native solo travel companion that understands not just where you want to go, but *how* you travel and what travel means to you. It remembers your past trips, learns your preferences, helps you plan with intelligence, and reflects your journey back to you over time.
+Voyager is an AI-native travel companion that understands not just where you want to go, but *how* you travel and what travel means to you. It remembers past trips, learns preferences, helps plan with intelligence, and reflects journeys back over time.
+
+It is also an evolving AI-engineering laboratory. The travel domain gives new AI
+capabilities a real product context—tools, memory, retrieval, planning, persistence,
+and user-facing consequences—without requiring a new app for each experiment. Voyager
+is where we can evaluate safety methods, trial decision models such as Jev, compare
+agents and models, and integrate promising AI tools as concrete, measured features.
 
 > "An AI that augments human meaning-making through travel."
 
@@ -28,13 +34,14 @@ Each phase is a capability that deepens over time rather than a box that closes.
 | **1. Core architecture** | Agent loop, tool calling, MCP, memory, RAG, multi-agent planning | ✅ Built |
 | **2. Operability** | Eval harness, feature flag, tracing, cost accounting | ✅ Built, ongoing |
 | **3. Trustworthiness** | Agent safety evals — indirect prompt injection, both architectures | ⏸ Paused 2026-09-03 — suite and results intact, resumes later |
+| **AI experimentation** | Safely slot in and evaluate new models, decision systems, and eval tooling in a real app | 🔄 Ongoing — Jev and the Inspect migration are first examples |
 | **4. Observability of retrieval** | Retrieval quality monitoring — the unmeasured RAG layer | 🔄 Instrumentation + UI built; golden set gated on traffic |
 | **5. Memory maturity** | Preference provenance → dedup → reconciliation → evolution | 🔄 Provenance, dedup and reconciliation built; evolution unscheduled |
 | **Live Trip Mode** | Agent knows a trip is underway: which day, today's plan | ✅ Built (Stages 1, 3, 4) — Stage 2 columns unbuilt |
 | **Trip-scoped chats** | Conversations carry a `trip_id`; picker on new chat | ✅ Built (all 4 stages) |
 | **Visited places & anecdotes** | Mark a saved place as visited; store the user's own note about it | ✅ Built (Stages 1–3) — chat capture unbuilt |
 | **Conditional preferences + onboarding** | Preferences carry *when* they hold; onboarding asks about contrasting trips | 🕐 Candidate — design only, unscheduled |
-| **6. Production** | Deployment, auth, Postgres/pgvector, rate limits, quotas | 🔄 **Partial** — deployment + a shared-token lock, for one real trip. The rest deferred |
+| **6. Production** | Deployment, auth, Postgres/pgvector, rate limits, quotas | 🔄 **Partial** — deployment + a shared-token lock; the rest deferred |
 
 **Deviation worth naming (2026-09-05):** Live Trip Mode, trip-scoped chats, and
 visited places/anecdotes were built while Phase 4 was still "Next". Guiding
@@ -50,6 +57,11 @@ accounting made spend visible; tracing made intermediate agent state visible; sa
 made injection resistance measurable; retrieval monitoring is the missing piece —
 everything so far judges final replies, so a bad plan can't be attributed to a bad
 retrieval versus a bad LLM.
+
+New capabilities do not need to wait for a numbered phase when they make Voyager a
+better learning and experimentation environment. The bar is that each one has a clear
+product fit, a bounded hypothesis, and proportionate verification—tests, an eval, or
+observable operational evidence—rather than being technology added for its own sake.
 
 ### Phase detail
 
@@ -234,10 +246,11 @@ Evolution needs 1–3 shipped *and* enough real usage that contradictions accumu
 naturally; built earlier, there is no way to validate it. Phase 4's distance metrics
 are the signal for when it becomes urgent.
 
-#### Phase 6 — production (partially pulled forward 2026-09-06)
+#### Phase 6 — production (partially pulled forward)
 
-**A real Halifax trip on Sept 18–21 is the driver**, and phone access while travelling is
-the one thing local-only cannot give. That justifies a *subset*, not the phase:
+Deployment and the shared-token lock were pulled forward to make the app usable beyond
+the local development loop. They are a deliberately narrow operational subset, not a
+claim that the app is ready for multi-user production:
 
 - [x] **Deployment** — Fly/Railway container + Vercel frontend (in progress)
 - [x] **Auth** — but a **shared token** (`app/auth.py`), not the multi-tenant auth this

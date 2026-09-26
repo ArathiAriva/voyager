@@ -1,19 +1,27 @@
 # Voyager — Agent Context
 
-Voyager is an AI travel companion (chat, trip planning, memory, journal RAG) built as a 6-month AI-engineering learning project. Phases 1-2 built, 3 paused, 4-5 substantially built, and a deliberate *subset* of 6 (deployment + a shared-token lock) pulled forward for a real trip: single-agent chat loop + LangGraph multi-agent planner are both live, feature-flagged for A/B evals.
+Voyager is an AI travel companion (chat, trip planning, memory, journal RAG) and an
+AI-engineering experimentation environment. Its real product surface makes it a useful
+place to evaluate and integrate agents, safety methods, decision models, and new tooling
+without creating a separate demo for each idea. Phases 1-2 are built, 3 is paused, 4-5
+are substantially built, and a deliberate subset of 6 (deployment + a shared-token lock)
+was pulled forward. The single-agent chat loop and LangGraph multi-agent planner remain
+live and feature-flagged for comparison.
 
-**Deploying for real use (2026-09-06).** A real Halifax trip on **Sept 18–21** is
-the current driver, which pulls some Month 6 work forward. `app/auth.py` adds a
-**shared-token lock** — explicitly *not* a step toward multi-user, since isolation
-here is process-level and would fail silently if one process served two users. Still
-to do: mobile layout fixes (the sidebar defaults to 288px of a 390px screen), a
-Dockerfile with the 166 MB Chroma model baked in, and a **persistent volume** —
-SQLite and Chroma are files, so a redeploy without one wipes everything.
+**Operational subset.** `app/auth.py` adds a **shared-token lock** — explicitly *not*
+a step toward multi-user, since isolation here is process-level and would fail silently
+if one process served two users. Still to do: mobile layout fixes, a Dockerfile with the
+166 MB Chroma model baked in, and a **persistent volume** — SQLite and Chroma are files,
+so a redeploy without one wipes everything.
 
 **Nothing in `backend/data/` or `backend/chroma_*/` is in git.** That data exists
 only on the dev machine.
 
-**Active workstream (2026-09-03): core product flow.** Voyager is first an AI-engineering / LLM-app project — making the chat → trip → itinerary path feel natural comes before safety work. The **indirect prompt-injection safety eval suite** (`backend/evals/safety_*`) is **paused**, not abandoned: the suite, its `results/`, and `SAFETY-LEDGER.md` stay in place and resume later. Don't start safety-eval work (S-1b, S-3, S-4, S-5, S-9, S-10) unless the user asks. See [OPEN-ITEMS.md](../OPEN-ITEMS.md) for what's parked and what isn't.
+**Active workstream.** Core product flow remains important, but Voyager also welcomes
+new AI experiments when they have a clear product fit and measurable hypothesis. The
+**indirect prompt-injection safety eval suite** (`backend/evals/safety_*`) is **paused**,
+not abandoned: the suite, its `results/`, and `SAFETY-LEDGER.md` stay in place and resume
+when prioritised. See [OPEN-ITEMS.md](../OPEN-ITEMS.md) for current work.
 
 ## System at a glance
 

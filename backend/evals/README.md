@@ -21,6 +21,24 @@ python -m evals.run --cases jp-7d,istanbul-3d
 python -m evals.run --judge-model openai/gpt-4o-mini   # vary the judge
 ```
 
+## Inspect migration spike
+
+Phase 1 adds two one-case [Inspect](https://inspect.aisi.org.uk/) task wrappers. They
+still call the real Voyager backend and delegate to the proven runners, while recording
+the result and scores in Inspect's per-sample eval log. They do not replace the runners.
+
+```sh
+inspect eval evals/inspect_tasks.py@voyager_quality_spike
+inspect eval evals/inspect_tasks.py@voyager_safety_spike
+inspect view
+```
+
+Task parameters retain the existing controls, for example
+`-T planner=multi`, `-T case_id=jp-7d`, and `-T base_url=http://localhost:8060`.
+The safety wrapper preserves the dedicated `safetyeval` profile and empty-profile
+preflight. Phase 2 will move execution and judging into native Inspect solvers/scorers
+after parity with the existing runners is established.
+
 Cost note: the multi-agent graph is ~12 LLM calls per planning conversation (three
 researchers doing retrieve-then-synthesize, plus six single-shot nodes), versus 2-4 for
 the single-agent loop. A full `--planner both` run over 15 cases is therefore dominated

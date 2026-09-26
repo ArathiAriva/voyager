@@ -30,9 +30,9 @@ def test_seeding_stays_on_for_other_values(monkeypatch, value):
 
 # ── Planner ─────────────────────────────────────────────────────────────────
 
-def test_planner_defaults_to_multi(monkeypatch):
+def test_planner_defaults_to_single(monkeypatch):
     monkeypatch.delenv("VOYAGER_PLANNER", raising=False)
-    assert flags.resolve_planner() == "multi"
+    assert flags.resolve_planner() == "single"
 
 
 def test_planner_request_override_beats_env(monkeypatch):
@@ -42,4 +42,4 @@ def test_planner_request_override_beats_env(monkeypatch):
 
 def test_planner_ignores_invalid_values(monkeypatch):
     monkeypatch.delenv("VOYAGER_PLANNER", raising=False)
-    assert flags.resolve_planner("nonsense") == "multi"
+    assert flags.resolve_planner("nonsense") == "single"

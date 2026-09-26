@@ -1,6 +1,6 @@
 # Voyager — AI Travel Companion
 
-An AI-native travel companion that remembers your trips, helps you plan, and gives real-time travel context. Built as a 6-month learning project covering tool-calling agents, memory systems, RAG, multi-agent orchestration, and MCP.
+An AI-native travel companion that remembers your trips, helps you plan, and gives real-time travel context. It is also an adaptable AI-engineering learning environment for evaluating and integrating new capabilities—agents, safety methods, decision models, and tooling—in a real product context.
 
 ## Status
 
@@ -11,7 +11,8 @@ superseded preferences retired rather than deleted), Live Trip Mode, trip-scoped
 and visited places with anecdotes.
 
 **Agent safety evals are paused** (2026-09-03), not abandoned — the suite, its results
-and `SAFETY-LEDGER.md` stay in place. Current focus is deploying for real use on a trip.
+and `SAFETY-LEDGER.md` stay in place. The app remains a home for bounded, well-measured
+AI experiments such as Jev decision routing and the Inspect eval migration.
 
 Roadmap, phase definitions, and scope decisions live in [VISION.md](VISION.md).
 Known bugs and open work live in [OPEN-ITEMS.md](OPEN-ITEMS.md).
@@ -93,8 +94,8 @@ uvicorn app.main:app --reload
 Or use the profile script (recommended — handles per-profile DB and env):
 
 ```bash
-bash scripts/run.sh --profile rand                    # defaults: port 8060, multi-agent planner
-bash scripts/run.sh --profile rand --planner single   # single-agent tool-call loop
+bash scripts/run.sh --profile rand                    # defaults: port 8060, single-agent planner
+bash scripts/run.sh --profile rand --planner multi    # LangGraph multi-agent planner
 bash scripts/run.sh --profile rand --port 8061        # run a second instance side by side
 ```
 
@@ -110,10 +111,10 @@ Two architectures handle planning requests, and both stay live so they can be co
 
 | | |
 |---|---|
-| `multi` (default) | LangGraph multi-agent graph — specialist researchers, optimizer, critic. Emits live progress steps to the chat UI. |
-| `single` | The single-agent tool-call loop. |
+| `multi` | LangGraph multi-agent graph — specialist researchers, optimizer, critic. Emits live progress steps to the chat UI. |
+| `single` (default) | The single-agent tool-call loop. |
 
-Resolution order is **per-request override → `VOYAGER_PLANNER` env → `multi`**:
+Resolution order is **per-request override → `VOYAGER_PLANNER` env → `single`**:
 
 - `--planner single|multi` on `run.sh` sets it for the whole server (applied *after* the
   profile file is sourced, so it beats a `VOYAGER_PLANNER` baked into a profile).
@@ -133,8 +134,13 @@ to the single-agent loop rather than failing.
 |----------|----------|---------|-------------|
 | `OPENROUTER_API_KEY` | Yes | — | OpenRouter API key |
 | `OPENROUTER_MODEL` | No | `anthropic/claude-haiku-4-5` | Any OpenRouter model string |
+| `JEV_ENABLED` | No | `0` | Enables Jev planning-intent classification and extracted-preference filtering |
+| `JEV_MODEL` | No | `typesafe/jev-1.13` | Jev model ID used through OpenRouter's Decisions API |
+| `JEV_PLANNING_THRESHOLD` | No | `0.80` | Minimum Jev confidence required to route to the planning graph |
+| `JEV_MEMORY_FILTER_ENABLED` | No | `1` | When Jev is enabled, vets extracted preferences before storing them in memory |
+| `JEV_MEMORY_PREFERENCE_THRESHOLD` | No | `0.80` | Minimum Jev confidence required to retain an extracted preference |
 | `BRAVE_API_KEY` | No | — | [Brave Search API](https://brave.com/search/api/) key; enables the `web_search` tool |
-| `VOYAGER_PLANNER` | No | `multi` | `single` or `multi` — which architecture handles planning requests (see above) |
+| `VOYAGER_PLANNER` | No | `single` | `single` or `multi` — which architecture handles planning requests (see above) |
 | `VOYAGER_AUTH_TOKEN` | No | — | Shared access token. **Unset means every endpoint is public** — correct locally, wrong on the internet. Startup logs a warning when unset. |
 | `VOYAGER_CORS_ORIGINS` | No | — | Comma-separated extra origins for a deployed frontend; localhost defaults always apply |
 | `VOYAGER_SEED_DEMO_TRIPS` | No | on | `0`/`false`/`no`/`off` stops the three demo trips being seeded into an empty DB |

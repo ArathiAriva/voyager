@@ -11,7 +11,7 @@
 
 `ConversationORM` has `id`, `title`, `created_at`, `updated_at` and its messages.
 There is **no `trip_id`, and no link in either direction**. A conversation about
-Halifax and a conversation about nothing in particular are indistinguishable
+Kyoto and a conversation about nothing in particular are indistinguishable
 rows.
 
 So trip context is re-derived from text on every turn, by two different
@@ -25,7 +25,7 @@ mechanisms:
 
 Three consequences, in rising order of severity:
 
-**a. Chats are not findable by trip.** "What did I discuss about Halifax" has no
+**a. Chats are not findable by trip.** "What did I discuss about Kyoto" has no
 answer except semantic search over episodes. On `egwene` there are 120
 conversations against 7 trips; nothing connects them.
 
@@ -33,8 +33,8 @@ conversations against 7 trips; nothing connects them.
 out afresh which trip it is about, from the transcript, every time.
 
 **c. A fuzzy-match miss silently creates a duplicate trip.** This is the sharp
-edge. `_resolve_trip_id` has no failure branch — if the brief says "Halifax" and
-the stored trip is "Halifax, Nova Scotia", `dest_matches` happens to cover it,
+edge. `_resolve_trip_id` has no failure branch — if the brief says "Kyoto" and
+the stored trip is "Kyoto, Japan", `dest_matches` happens to cover it,
 but the general case is a new trip appearing with no warning. Same class as B-10
 (`create_trip` not idempotent), and the user's first sight of it is a duplicate
 card on the trips page.
@@ -107,7 +107,7 @@ Three entry points, in order of how often they will be used:
 **Set, do not infer.** The agent should not silently set `trip_id` from what it
 reads in the transcript; that reintroduces the guessing this design removes, and
 a wrong guess would now be *persisted* rather than re-derived each turn. It may
-*offer*: "This looks like it's about your Halifax trip — want me to link it?"
+*offer*: "This looks like it's about your Kyoto trip — want me to link it?"
 
 ### 3.4 Where it surfaces
 

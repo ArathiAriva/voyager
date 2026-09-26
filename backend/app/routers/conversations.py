@@ -19,8 +19,8 @@ from app.tools import TOOL_SCHEMAS, execute_tool, find_live_trip
 from app.mcp_client import mcp_tool_schemas, call_mcp_tool
 from app.flags import resolve_planner
 from app.usage import usage_context
-from app.planning.router import is_planning_request, run_planning_graph
-from app import memory
+from app.planning.router import is_planning_request_with_jev, run_planning_graph
+from app import jev, memory
 
 logger = logging.getLogger("voyager.conversations")
 
@@ -297,6 +297,13 @@ async def _run_extraction(conversation_id: str, history: list[dict]) -> None:
         extracted = json.loads(raw)
         episode = extracted.get("episode", "").strip()
         preferences = [p for p in extracted.get("preferences", []) if p.strip()]
+        extracted_preference_count = len(preferences)
+        preferences = await jev.filter_durable_preferences(preferences)
+        if len(preferences) != extracted_preference_count:
+            logger.info(
+                "conv=%s | Jev retained %d/%d extracted preferences",
+                conversation_id[:8], len(preferences), extracted_preference_count,
+            )
         if episode:
             memory.store_episode(conversation_id, episode, source="conversation")
         if preferences:
@@ -451,7 +458,7 @@ async def send_message(
 
         # ── Multi-agent planning path (feature-flagged, see app.flags) ────────
         planner_mode = resolve_planner(body.planner)
-        if planner_mode == "multi" and is_planning_request(body.content):
+        if planner_mode == "multi" and await is_planning_request_with_jev(body.content):
             logger.info("conv=%s | routing to planning graph (planner=%s)", conversation_id[:8], planner_mode)
 
             step_queue: asyncio.Queue[str | None] = asyncio.Queue()

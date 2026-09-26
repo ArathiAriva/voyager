@@ -17,8 +17,8 @@ The difference is entirely one of default context. Compare:
 
 | | Today | With live mode |
 |---|---|---|
-| "where should I eat" | Asks which trip, or guesses from history | Knows you are on day 2 in Halifax, near the waterfront |
-| "is it going to rain" | Asks the destination | Checks Halifax, today |
+| "where should I eat" | Asks which trip, or guesses from history | Knows you are on day 2 in Kyoto, near Gion |
+| "is it going to rain" | Asks the destination | Checks Kyoto, today |
 | "what's next" | Meaningless | Reads today's plan |
 | journal entry | Retrospective, date typed by hand | Live capture, dated and trip-attached automatically |
 
