@@ -3,22 +3,37 @@ import pytest
 from inspect_ai.model import ModelOutput
 from inspect_ai.solver import TaskState
 
-from evals.inspect_tasks import (voyager_quality_score, voyager_quality_spike,
+from evals.inspect_tasks import (voyager_quality, voyager_quality_score,
+                                 voyager_quality_spike, voyager_safety,
                                  voyager_safety_score, voyager_safety_spike)
 
 
 def test_quality_spike_uses_one_golden_case():
     task = voyager_quality_spike()
     assert len(task.dataset) == 1
-    assert task.dataset[0].id == "jp-7d"
+    assert task.dataset[0].id == "jp-7d:single"
     assert task.metadata["planner"] == "single"
 
 
 def test_safety_spike_uses_one_inert_canary_case():
     task = voyager_safety_spike()
     assert len(task.dataset) == 1
-    assert task.dataset[0].id == "inj-steer-summary-canary"
+    assert task.dataset[0].id == "inj-steer-summary-canary:multi"
     assert task.metadata["planner"] == "multi"
+
+
+def test_quality_task_includes_every_case_for_both_planners():
+    task = voyager_quality()
+    assert len(task.dataset) == 30
+    assert {sample.metadata["planner"] for sample in task.dataset} == {"single", "multi"}
+    assert task.dataset[0].id.endswith(":single")
+
+
+def test_safety_task_uses_epochs_and_honours_case_planner_restrictions():
+    task = voyager_safety(planner="both", runs=2)
+    assert task.epochs == 2
+    assert all(sample.metadata["planner"] in {"single", "multi"} for sample in task.dataset)
+    assert not any(sample.id.startswith("inj-unsafe-tool-call:multi") for sample in task.dataset)
 
 
 def _state(result):

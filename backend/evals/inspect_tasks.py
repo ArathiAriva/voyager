@@ -1,13 +1,15 @@
-"""Phase-1 Inspect wrappers for Voyager's live-backend evals.
+"""Inspect tasks for Voyager's live-backend quality and safety evaluations.
 
-They delegate execution to the existing runners and retain the full result in
-Inspect sample state. This validates Inspect tasks, scoring and logs without
-changing the production-facing evaluation protocol.
+The backend API remains the system under test. The solvers deliberately reuse
+the tested execution/judging routines, but Inspect owns the datasets, epochs,
+scoring, and durable per-sample logs.
 
-    inspect eval evals/inspect_tasks.py@voyager_quality_spike
-    inspect eval evals/inspect_tasks.py@voyager_safety_spike
+    inspect eval evals/inspect_tasks.py@voyager_quality -T planner=both
+    inspect eval evals/inspect_tasks.py@voyager_safety -T planner=multi -T runs=3
 """
 from __future__ import annotations
+
+import asyncio
 
 import json
 import sys
@@ -35,6 +37,10 @@ from evals._harness import adopt_backend_database, guard_profile
 DEFAULT_BASE_URL = "http://localhost:8060"
 # Execution happens through Voyager's backend, not this Inspect model.
 LOG_MODEL = "mockllm/model"
+# Both suites compare trip snapshots and the safety suite mutates fixtures in a
+# shared backend profile. Parallel samples would therefore cross-contaminate
+# their evidence. This also makes an accidental multi-sample invocation safe.
+_BACKEND_RUN_LOCK = asyncio.Lock()
 
 
 def _case(filename: str, case_id: str) -> dict[str, Any]:
@@ -45,25 +51,27 @@ def _case(filename: str, case_id: str) -> dict[str, Any]:
 
 
 @solver
-def run_voyager_case(*, kind: str, planner: str, base_url: str, judge_model: str | None = None):
+def run_voyager_case(*, kind: str, base_url: str, judge_model: str | None = None):
     """Run one existing case and expose its evidence to Inspect scorers/logs."""
     async def solve(state: TaskState, generate: Generate) -> TaskState:
         case = state.metadata["voyager_case"]
-        async with httpx.AsyncClient(base_url=base_url) as client:
-            adopted = await adopt_backend_database(client)
-            if kind == "safety":
-                # Keep the safety runner's two protections: a dedicated named
-                # profile and no pre-existing saved places competing with fixtures.
-                guard_profile(adopted, expect="safetyeval")
-                await safety_run._preflight_profile(client)
-            else:
-                guard_profile(adopted)
-            if kind == "quality":
-                result = await quality_runner.run_case(client, case, planner, judge_model)
-            elif kind == "safety":
-                result = await safety_run.run_case(client, case, planner, judge_model)
-            else:
-                raise ValueError(f"unsupported Voyager eval kind: {kind}")
+        planner = state.metadata["planner"]
+        async with _BACKEND_RUN_LOCK:
+            async with httpx.AsyncClient(base_url=base_url) as client:
+                adopted = await adopt_backend_database(client)
+                if kind == "safety":
+                    # Keep the safety runner's two protections: a dedicated named
+                    # profile and no pre-existing saved places competing with fixtures.
+                    guard_profile(adopted, expect="safetyeval")
+                    await safety_run._preflight_profile(client)
+                else:
+                    guard_profile(adopted)
+                if kind == "quality":
+                    result = await quality_runner.run_case(client, case, planner, judge_model)
+                elif kind == "safety":
+                    result = await safety_run.run_case(client, case, planner, judge_model)
+                else:
+                    raise ValueError(f"unsupported Voyager eval kind: {kind}")
         state.store.set("voyager_result", result)
         state.output = ModelOutput(
             model=f"voyager/{planner}", completion=result.get("reply", ""),
@@ -106,31 +114,83 @@ def voyager_safety_score():
     return score
 
 
+def _planners(planner: str) -> list[str]:
+    if planner == "both":
+        return ["single", "multi"]
+    if planner in {"single", "multi"}:
+        return [planner]
+    raise ValueError("planner must be 'single', 'multi', or 'both'")
+
+
+def _quality_samples(case_ids: str | None, planner: str) -> list[Sample]:
+    wanted = set(case_ids.split(",")) if case_ids else None
+    cases = json.loads((EVALS_DIR / "golden_set.json").read_text())["cases"]
+    return [
+        Sample(id=f"{case['id']}:{mode}", input=case["prompt"], metadata={
+            "voyager_case": case, "planner": mode, "case_id": case["id"],
+        })
+        for mode in _planners(planner) for case in cases
+        if wanted is None or case["id"] in wanted
+    ]
+
+
+def _safety_samples(case_ids: str | None, planner: str) -> list[Sample]:
+    wanted = set(case_ids.split(",")) if case_ids else None
+    cases = json.loads((EVALS_DIR / "safety_set.json").read_text())["cases"]
+    return [
+        Sample(id=f"{case['id']}:{mode}", input="\n".join(case["script"]), metadata={
+            "voyager_case": case, "planner": mode, "case_id": case["id"],
+        })
+        for mode in _planners(planner) for case in cases
+        if (wanted is None or case["id"] in wanted)
+        and (not case.get("planners") or mode in case["planners"])
+    ]
+
+
+@task
+def voyager_quality(planner: str = "both", case_ids: str | None = None,
+                    base_url: str = DEFAULT_BASE_URL,
+                    judge_model: str | None = None) -> Task:
+    """Golden planning suite, with one Inspect sample per case and planner."""
+    return Task(
+        dataset=_quality_samples(case_ids, planner),
+        solver=run_voyager_case(kind="quality", base_url=base_url, judge_model=judge_model),
+        scorer=voyager_quality_score(), model=LOG_MODEL,
+        fail_on_error=False,
+        metadata={"voyager_eval": "quality", "planner": planner, "base_url": base_url},
+    )
+
+
+@task
+def voyager_safety(planner: str = "multi", case_ids: str | None = None, runs: int = 3,
+                   base_url: str = DEFAULT_BASE_URL,
+                   judge_model: str | None = safety_run.DEFAULT_JUDGE_MODEL) -> Task:
+    """Indirect-injection suite; ``runs`` maps directly to Inspect epochs."""
+    if runs < 1:
+        raise ValueError("runs must be at least 1")
+    return Task(
+        dataset=_safety_samples(case_ids, planner),
+        solver=run_voyager_case(kind="safety", base_url=base_url, judge_model=judge_model),
+        scorer=voyager_safety_score(), model=LOG_MODEL,
+        epochs=runs, fail_on_error=False,
+        metadata={"voyager_eval": "safety", "planner": planner, "base_url": base_url,
+                  "runs_per_case": runs},
+    )
+
+
+# Compatibility aliases for existing saved commands. They are intentionally
+# one-case tasks; new runs should use the full-suite task names above.
 @task
 def voyager_quality_spike(case_id: str = "jp-7d", planner: str = "single",
                           base_url: str = DEFAULT_BASE_URL,
                           judge_model: str | None = None) -> Task:
-    """Run one golden quality case through the existing live-backend protocol."""
-    case = _case("golden_set.json", case_id)
-    return Task(
-        dataset=[Sample(id=case["id"], input=case["prompt"], metadata={"voyager_case": case})],
-        solver=run_voyager_case(kind="quality", planner=planner, base_url=base_url,
-                                judge_model=judge_model),
-        scorer=voyager_quality_score(), model=LOG_MODEL,
-        metadata={"voyager_eval": "quality", "planner": planner, "base_url": base_url},
-    )
+    return voyager_quality(planner=planner, case_ids=case_id, base_url=base_url,
+                           judge_model=judge_model)
 
 
 @task
 def voyager_safety_spike(case_id: str = "inj-steer-summary-canary", planner: str = "multi",
                          base_url: str = DEFAULT_BASE_URL,
                          judge_model: str | None = None) -> Task:
-    """Run one inert-canary safety case through the existing live-backend protocol."""
-    case = _case("safety_set.json", case_id)
-    return Task(
-        dataset=[Sample(id=case["id"], input="\n".join(case["script"]), metadata={"voyager_case": case})],
-        solver=run_voyager_case(kind="safety", planner=planner, base_url=base_url,
-                                judge_model=judge_model),
-        scorer=voyager_safety_score(), model=LOG_MODEL,
-        metadata={"voyager_eval": "safety", "planner": planner, "base_url": base_url},
-    )
+    return voyager_safety(planner=planner, case_ids=case_id, runs=1, base_url=base_url,
+                          judge_model=judge_model)

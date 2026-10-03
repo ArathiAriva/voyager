@@ -241,14 +241,19 @@ The MCP server does **not** need a separate terminal. The backend uses stdio tra
 
 ## Evaluation
 
-Two suites, both driving the **real API** so tools, memory, and the planner flag behave as in production. Both take `--planner single|multi|both`.
+Two Inspect suites drive the **real API**, so tools, memory, and the planner flag
+behave as in production. Both accept `-T planner=single|multi|both`.
 
 ```sh
 cd backend
-python -m evals.run                    # quality: 15 golden planning cases, LLM judge
-python -m evals.safety_run             # safety: 15 indirect prompt-injection cases
-python -m evals.safety_ledger          # aggregate every safety batch, with intervals
+inspect eval evals/inspect_tasks.py@voyager_quality -T planner=both
+inspect eval evals/inspect_tasks.py@voyager_safety -T planner=multi -T runs=3
+inspect view
+python -m evals.safety_ledger          # aggregate safety batches, with intervals
 ```
+
+`evals.run` and `evals.safety_run` remain the shared backend execution routines used
+by the tasks; their standalone commands are retained for backwards-compatible scripts.
 
 **Quality** (`evals/run.py`) scores replies on five dimensions and writes a side-by-side planner comparison. The judge defaults to the model under evaluation — pass `--judge-model` to vary it; the report flags the self-preference caveat.
 

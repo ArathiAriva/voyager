@@ -25,6 +25,7 @@ frontend/.next/
 frontend/.env.local
 frontend/test-results/
 backend/evals/results/
+backend/logs/
 backend/trace_log.jsonl
 backend/trace_log.jsonl.*
 
