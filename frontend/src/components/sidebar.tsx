@@ -4,8 +4,9 @@ import { Box, Flex, Text, VStack } from "@chakra-ui/react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
-  ChatIcon, MapIcon, BrainIcon, ChartIcon, TraceIcon, SettingsIcon, CompassIcon, SearchIcon,
+  ChatIcon, MapIcon, BrainIcon, ChartIcon, TraceIcon, SettingsIcon, SearchIcon,
 } from "@/components/icons";
+import { VoyagerLogo } from "@/components/voyager-logo";
 
 const navItems = [
   { label: "Chats", href: "/chats", Icon: ChatIcon },
@@ -28,10 +29,10 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
   return (
     <Box
       as="nav"
-      w={collapsed ? "16" : "72"}
+      w={collapsed ? "16" : "56"}
       bg="bg.subtle"
       color="text.primary"
-      py={10}
+      py={6}
       flexShrink={0}
       borderRight="1px solid"
       borderColor="border.default"
@@ -44,13 +45,11 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
       h="100vh"
       alignSelf="flex-start"
     >
-      {/* Logo + toggle.
-          Collapsed, this stacks: the compass sits on the nav icons' centre line and
-          the toggle goes directly beneath it. Side by side, the two squeeze into the
-          64px rail and neither lands on the axis the nav icons share below. */}
+      {/* Stack the brand and toggle on the nav centre line when collapsed. */}
       <Box
-        mb={10}
-        px={collapsed ? 0 : 6}
+        mb={6}
+        px={collapsed ? 0 : 4}
+        position="relative"
         display="flex"
         flexDirection={collapsed ? "column" : "row"}
         alignItems="center"
@@ -58,24 +57,29 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
         justifyContent={collapsed ? "center" : "space-between"}
       >
         {!collapsed && (
-          <Box>
-            <Text fontSize="xl" fontWeight="800" letterSpacing="-0.04em" lineHeight="1" whiteSpace="nowrap">
-              Voyager
-            </Text>
-            <Text fontSize="xs" color="text.dim" mt={1.5} letterSpacing="0.08em" textTransform="uppercase" fontWeight="500" whiteSpace="nowrap">
+          <Box w="full">
+            <Flex align="center" gap={2.5} pr={8}>
+              <VoyagerLogo size={32} decorative />
+              <Text fontSize="xl" fontWeight="800" letterSpacing="-0.04em" lineHeight="1.1" whiteSpace="nowrap">
+                Voyager
+              </Text>
+            </Flex>
+            <Text fontSize="xs" color="text.secondary" mt={2} lineHeight="1.5" fontWeight="500" whiteSpace="nowrap">
               AI Travel Companion
             </Text>
           </Box>
         )}
 
         {collapsed && (
-          <Box color="text.bright"><CompassIcon size={22} /></Box>
+          <VoyagerLogo size={32} />
         )}
 
         <Box
           as="button"
           onClick={onToggle}
-          ml={collapsed ? 0 : 2}
+          position={collapsed ? "static" : "absolute"}
+          right={collapsed ? undefined : 3}
+          top={collapsed ? undefined : 0.5}
           w={7}
           h={7}
           display="flex"

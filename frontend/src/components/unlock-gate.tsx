@@ -1,9 +1,9 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Box, Button, Flex, Input, Text, VStack } from "@chakra-ui/react";
+import { Button, Flex, Input, Text, VStack } from "@chakra-ui/react";
 import { getToken, setToken, setUnauthorizedHandler } from "@/lib/api";
-import { CompassIcon } from "@/components/icons";
+import { VoyagerLogo } from "@/components/voyager-logo";
 
 /**
  * Prompts for the access token when the backend rejects a request.
@@ -41,7 +41,7 @@ export function UnlockGate({ children }: { children: React.ReactNode }) {
   return (
     <Flex minH="100vh" align="center" justify="center" bg="bg.page" px={6}>
       <VStack gap={5} maxW="380px" w="full">
-        <Box color="text.muted"><CompassIcon size={28} /></Box>
+        <VoyagerLogo size={64} decorative />
         <VStack gap={1}>
           <Text fontSize="xl" fontWeight="800" letterSpacing="-0.02em">Voyager</Text>
           <Text fontSize="sm" color="text.secondary" textAlign="center">
