@@ -14,7 +14,7 @@ from app.db import get_session
 from app.models.orm import ConversationORM, MessageORM, TripORM
 from app.models.conversation import (Conversation, ConversationCreate, ConversationSummary,
                                      ConversationUpdate, SendMessageRequest, Message)
-from app.claude import get_client, get_model
+from app.claude import get_client, get_model, model_options
 from app.tools import TOOL_SCHEMAS, execute_tool, find_live_trip
 from app.mcp_client import mcp_tool_schemas, call_mcp_tool
 from app.flags import resolve_planner
@@ -283,6 +283,7 @@ async def _run_extraction(conversation_id: str, history: list[dict]) -> None:
                 {"role": "system", "content": EXTRACTION_PROMPT},
                 {"role": "user", "content": transcript},
             ],
+            **model_options(get_model()),
         )
         raw = (response.choices[0].message.content or "").strip()
         # Strip markdown code fences if the model wrapped the JSON
@@ -555,6 +556,7 @@ async def send_message(
                     messages=[{"role": "system", "content": system_prompt}] + history,
                     tools=all_tools,
                     tool_choice="auto",
+                    **model_options(model),
                 )
                 msg = response.choices[0].message
                 usage = response.usage

@@ -106,7 +106,12 @@ This creates trips and journal entries via the API, which automatically triggers
 
 ```bash
 bash scripts/run.sh --profile rand
+bash scripts/run.sh --profile rand --model luna
+bash scripts/run.sh --profile rand --model haiku
 ```
+
+The `--model` flag accepts the aliases `luna` and `haiku`, or any full OpenRouter
+model ID. It overrides `OPENROUTER_MODEL` from the selected profile for that run.
 
 API at `http://localhost:8060`. Docs at `http://localhost:8060/docs`.
 
@@ -138,7 +143,7 @@ Revision messages (`find cheaper restaurants`, `redo the accommodation`) re-run 
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
 | `OPENROUTER_API_KEY` | Yes | — | OpenRouter API key |
-| `OPENROUTER_MODEL` | No | `anthropic/claude-haiku-4-5` | Any OpenRouter model string |
+| `OPENROUTER_MODEL` | No | `openai/gpt-6-luna` | Any OpenRouter model string; override per run with `scripts/run.sh --model` |
 | `JEV_ENABLED` | No | `0` | Enables Jev planning-intent classification and extracted-preference filtering |
 | `JEV_MODEL` | No | `typesafe/jev-1.13` | Jev model ID used through OpenRouter's Decisions API |
 | `JEV_PLANNING_THRESHOLD` | No | `0.80` | Minimum Jev confidence required to route a message to the planning graph |

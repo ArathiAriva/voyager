@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.db import get_session
 from app.models.orm import TripORM, JournalEntryORM
 from app.models.trip import JournalEntry, JournalEntryCreate, JournalEntryUpdate
-from app.claude import get_client, get_model
+from app.claude import get_client, get_model, model_options
 from app.usage import usage_context
 from app import memory as mem
 
@@ -76,6 +76,7 @@ async def _extract_journal_memory(entry_id: str, trip_destination: str, body: st
                 {"role": "system", "content": JOURNAL_EXTRACTION_PROMPT},
                 {"role": "user", "content": f"Destination: {trip_destination}\n\nJournal entry:\n{body}"},
             ],
+            **model_options(get_model()),
         )
         raw = (response.choices[0].message.content or "").strip()
         if raw.startswith("```"):

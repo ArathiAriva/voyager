@@ -10,7 +10,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.claude import get_client, get_model
+from app.claude import get_client, get_model, model_options
 from app.db import SessionLocal, get_session
 from app import memory
 from app.models.orm import TripORM, SavedPlaceORM, PlaceAnecdoteORM
@@ -93,6 +93,7 @@ async def _run_enrichment(place_id: str, url: str, destination: str) -> None:
                 {"role": "system", "content": PLACE_EXTRACTION_PROMPT},
                 {"role": "user", "content": f"URL: {url}\n\nContent:\n{markdown}"},
             ],
+            **model_options(get_model()),
         )
         raw = (completion.choices[0].message.content or "").strip()
         # Strip ```json fences if present

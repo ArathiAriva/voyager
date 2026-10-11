@@ -154,7 +154,8 @@ Implementation notes worth keeping:
 
 ```bash
 cd backend && source .venv/bin/activate
-bash scripts/run.sh --profile rand    # standard: per-profile DB/env, serves :8060 (override with --port)
+bash scripts/run.sh --profile rand                 # default model: GPT-6 Luna
+bash scripts/run.sh --profile rand --model haiku   # switch this run to Claude Haiku 4.5
 bash scripts/migrate.sh               # Alembic migrations with DB backup/auto-restore (see INC-001)
 ```
 
@@ -163,7 +164,7 @@ bash scripts/migrate.sh               # Alembic migrations with DB backup/auto-r
 | Variable | Required | Notes |
 |---|---|---|
 | `OPENROUTER_API_KEY` | Yes | |
-| `OPENROUTER_MODEL` | No | Default `anthropic/claude-haiku-4-5` |
+| `OPENROUTER_MODEL` | No | Default `openai/gpt-6-luna`. Settable per server with `scripts/run.sh --model luna|haiku|provider/model`; the flag wins over the profile value. |
 | `VOYAGER_PLANNER` | No | `single` or `multi` (see evals-ops.md). Settable per-server with `scripts/run.sh --planner`, which is applied after the profile file is sourced so it wins over a profile value. |
 | `PHOENIX_COLLECTOR_ENDPOINT` | No | Enables tracing when set |
 | `VOYAGER_SEED_DEMO_TRIPS` | No | `0`/`false`/`no`/`off` stops `main.py` seeding the three demo trips into an empty DB on boot. Default on. Set it on a profile kept deliberately bare — otherwise deleting every trip and restarting brings them back, since the seed fires whenever the trips table is empty. Set on `moiraine`. |

@@ -97,7 +97,13 @@ Or use the profile script (recommended — handles per-profile DB and env):
 bash scripts/run.sh --profile rand                    # defaults: port 8060, single-agent planner
 bash scripts/run.sh --profile rand --planner multi    # LangGraph multi-agent planner
 bash scripts/run.sh --profile rand --port 8061        # run a second instance side by side
+bash scripts/run.sh --profile rand --model luna       # GPT-6 Luna
+bash scripts/run.sh --profile rand --model haiku      # Claude Haiku 4.5
 ```
+
+`--model` overrides `OPENROUTER_MODEL` for that server run. It also accepts a full
+OpenRouter model ID, such as `--model openai/gpt-6-luna`. If omitted, Voyager uses
+the profile's `OPENROUTER_MODEL` value or the Luna default.
 
 API available at `http://localhost:8060`. Interactive docs at `http://localhost:8060/docs`.
 
@@ -133,7 +139,7 @@ to the single-agent loop rather than failing.
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
 | `OPENROUTER_API_KEY` | Yes | — | OpenRouter API key |
-| `OPENROUTER_MODEL` | No | `anthropic/claude-haiku-4-5` | Any OpenRouter model string |
+| `OPENROUTER_MODEL` | No | `openai/gpt-6-luna` | Any OpenRouter model string; override per run with `scripts/run.sh --model` |
 | `JEV_ENABLED` | No | `0` | Enables Jev planning-intent classification and extracted-preference filtering |
 | `JEV_MODEL` | No | `typesafe/jev-1.13` | Jev model ID used through OpenRouter's Decisions API |
 | `JEV_PLANNING_THRESHOLD` | No | `0.80` | Minimum Jev confidence required to route to the planning graph |

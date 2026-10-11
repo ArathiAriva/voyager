@@ -161,7 +161,7 @@ async def generate_profile_data(persona: dict, entries_per_trip: int) -> list[di
         api_key=os.environ["OPENROUTER_API_KEY"],
         base_url="https://openrouter.ai/api/v1",
     )
-    model = os.environ.get("OPENROUTER_MODEL", "anthropic/claude-haiku-4-5")
+    model = os.environ.get("OPENROUTER_MODEL", "openai/gpt-6-luna")
 
     prompt = GENERATION_PROMPT.format(
         name=persona["name"],
@@ -177,6 +177,7 @@ async def generate_profile_data(persona: dict, entries_per_trip: int) -> list[di
         model=model,
         messages=[{"role": "user", "content": prompt}],
         temperature=0.9,
+        **({"reasoning_effort": "none"} if model == "openai/gpt-6-luna" else {}),
     )
     raw = (response.choices[0].message.content or "").strip()
     if raw.startswith("```"):

@@ -4,12 +4,17 @@ set -euo pipefail
 PROFILES_DIR="$(cd "$(dirname "$0")/../profiles" && pwd)"
 
 usage() {
-  echo "Usage: $0 --profile <name> [--port <port>] [--planner single|multi]"
+  echo "Usage: $0 --profile <name> [--port <port>] [--planner single|multi] [--model luna|haiku|provider/model]"
   echo ""
   echo "  --planner  Which architecture handles planning-intent messages."
   echo "             multi           = LangGraph multi-agent graph"
   echo "             single (default) = single-agent tool-call loop"
   echo "             Overrides VOYAGER_PLANNER from the profile/env."
+  echo "  --model    Which LLM runs the application."
+  echo "             luna (default) = openai/gpt-6-luna"
+  echo "             haiku          = anthropic/claude-haiku-4-5"
+  echo "             provider/model = any full OpenRouter model ID"
+  echo "             Overrides OPENROUTER_MODEL from the profile/env."
   echo ""
   echo "Available profiles:"
   for f in "$PROFILES_DIR"/.env.*; do
@@ -21,6 +26,7 @@ usage() {
 PROFILE=""
 PORT=8060
 PLANNER=""
+MODEL=""
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --profile|-p)
@@ -37,6 +43,10 @@ while [[ $# -gt 0 ]]; do
         echo "Error: --planner must be 'single' or 'multi' (got '$PLANNER')"
         exit 1
       fi
+      shift 2
+      ;;
+    --model|-m)
+      MODEL="$2"
       shift 2
       ;;
     *)
@@ -65,12 +75,33 @@ if [[ -n "$PLANNER" ]]; then
   export VOYAGER_PLANNER="$PLANNER"
 fi
 
+# Applied after sourcing the profile so the command-line choice always wins.
+if [[ -n "$MODEL" ]]; then
+  case "$MODEL" in
+    luna)
+      export OPENROUTER_MODEL="openai/gpt-6-luna"
+      ;;
+    haiku)
+      export OPENROUTER_MODEL="anthropic/claude-haiku-4-5"
+      ;;
+    */*)
+      export OPENROUTER_MODEL="$MODEL"
+      ;;
+    *)
+      echo "Error: --model must be 'luna', 'haiku', or a full provider/model ID (got '$MODEL')"
+      exit 1
+      ;;
+  esac
+fi
+
 EXISTING_PIDS=$(lsof -ti tcp:"$PORT" 2>/dev/null || true)
 if [[ -n "$EXISTING_PIDS" ]]; then
   echo "Killing existing process(es) on port $PORT (PIDs $EXISTING_PIDS)"
   echo "$EXISTING_PIDS" | xargs kill
 fi
 
-echo "Starting Voyager backend with profile: $PROFILE on port $PORT (planner: ${VOYAGER_PLANNER:-single})"
+echo "Starting Voyager backend with profile: $PROFILE on port $PORT"
+echo "  planner: ${VOYAGER_PLANNER:-single}"
+echo "  model:   ${OPENROUTER_MODEL:-openai/gpt-6-luna}"
 cd "$(dirname "$0")/.."
 exec uvicorn app.main:app --reload --port "$PORT"

@@ -39,7 +39,7 @@ import logging
 from dataclasses import dataclass
 
 from app import memory
-from app.claude import get_client, get_model
+from app.claude import get_client, get_model, model_options
 from app.usage import usage_context
 
 logger = logging.getLogger("voyager.reconcile")
@@ -185,6 +185,7 @@ async def reconcile_preferences(apply: bool = False, max_pairs: int = 40) -> lis
             {"role": "system", "content": RECONCILE_PROMPT},
             {"role": "user", "content": listing},
         ],
+        **model_options(get_model()),
     )
     raw = (response.choices[0].message.content or "").strip()
     if raw.startswith("```"):

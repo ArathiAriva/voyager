@@ -39,7 +39,7 @@ Chat messages hit `POST /api/conversations/{id}/messages` (SSE stream). Planning
 
 ## Key facts
 
-- **LLM:** OpenRouter via the `openai` SDK (not Anthropic SDK yet — migration planned). Model set by `OPENROUTER_MODEL`, default `anthropic/claude-haiku-4-5`. All calls go through `backend/app/claude.py`; every call is usage-logged (`app/usage.py`).
+- **LLM:** OpenRouter via the `openai` SDK. Model set by `OPENROUTER_MODEL`, default `openai/gpt-6-luna`; `scripts/run.sh --model luna|haiku|provider/model` selects it per run. Luna calls use `reasoning_effort=none` for Chat Completions tool compatibility and predictable cost. All calls use the client in `backend/app/claude.py`; every call is usage-logged (`app/usage.py`).
 - **Profiles:** per-user SQLite + Chroma, selected with `backend/scripts/run.sh --profile <name>`.
 - **Tests:** backend pytest (real ASGI test client, no mocking Claude/DB at unit level), mcp-server pytest, frontend vitest + Playwright. Run all via the `/test` skill; start servers via `/run`. **253 backend / 35 frontend passing as of 2026-09-06**; the `test_content.py` failures noted here previously were fixed in B-3.
 - **Evals:** quality (`evals/run.py`, 15 golden cases) and safety (`evals/safety_run.py`, 15 injection cases). Both take `--planner single|multi|both`. The safety suite needs an **empty** profile (`--profile safetyeval`); the quality suite wants a *seeded* one. Don't mix them up — on a populated profile safety fixtures lose retrieval to real data and produce vacuous passes.

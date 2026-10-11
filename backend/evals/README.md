@@ -145,7 +145,7 @@ script doesn't phrase-match (item 1) — item 2 currently has to be checked via 
   cases concurrently against a backend you care about — the trips-diff can misattribute
   across cases.
 - Judge defaults to `google/gemini-2.5-flash-lite` — a different provider than the
-  agent under test (`OPENROUTER_MODEL`, default `anthropic/claude-haiku-4-5`), to
+  agent under test (`OPENROUTER_MODEL`, default `openai/gpt-6-luna`), to
   reduce self-preference bias, and cheap (~$0.10/$0.40 per M input/output tokens on
   OpenRouter as of 2026-08-22 — confirm current pricing before relying on it). Pass
   `--judge-model` to override.
